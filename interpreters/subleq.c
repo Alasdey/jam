@@ -31,10 +31,10 @@ void free_final_mem(long *ptr) {
  Returns a dynamically allocated array of output longs (shrunk to the real output size).
 */
 long* subleq_interpreter(const long *code, size_t code_length,
-                           const long *input, size_t input_length,
-                           size_t max_output_length, size_t max_iter,
-                         size_t *output_count, int *interp_status,
-                         long **final_mem_out, size_t *final_mem_len_out) {
+                            const long *input, size_t input_length,
+                            size_t max_output_length, size_t max_iter,
+                            size_t *output_count, int *interp_status,
+                            long **final_mem_out, size_t *final_mem_len_out) {
     long *mem = malloc(code_length * sizeof(long));
     if (!mem) {
         fprintf(stderr, "Memory allocation failed\n");
@@ -118,7 +118,7 @@ long* subleq_interpreter(const long *code, size_t code_length,
         }
     }
 
-    // NEW: capture final memory image before freeing internal buffer
+    // Capture final memory image before freeing internal buffer
     if (final_mem_out && final_mem_len_out) {
         long *final_mem = malloc(code_length * sizeof(long));
         if (!final_mem) {
