@@ -1,5 +1,5 @@
 # jam
-A Jam
+A jam trying to reach escape velocity.
 
 ## To use
 ```bash
