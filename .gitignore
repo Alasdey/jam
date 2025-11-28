@@ -1,5 +1,6 @@
 # From the project
 reward.py
+libsubleq.so
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

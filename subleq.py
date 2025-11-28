@@ -26,28 +26,34 @@ class SubleqInterpreter:
         # long* subleq_interpreter(const long *code, size_t code_length,
         #                          const long *input, size_t input_length,
         #                          size_t max_output_length, size_t max_iter,
-        #                          size_t *output_count, int *interp_status)
+        #                          size_t *output_count, int *interp_status,
+        #                          long **final_mem_out, size_t *final_mem_len_out)
         self.lib.subleq_interpreter.argtypes = [
-            ctypes.POINTER(ctypes.c_long),  # code
-            ctypes.c_size_t,                 # code_length
-            ctypes.POINTER(ctypes.c_long),  # input
-            ctypes.c_size_t,                 # input_length
-            ctypes.c_size_t,                 # max_output_length
-            ctypes.c_size_t,                 # max_iter
-            ctypes.POINTER(ctypes.c_size_t), # output_count
-            ctypes.POINTER(ctypes.c_int)     # interp_status
+            ctypes.POINTER(ctypes.c_long),     # code
+            ctypes.c_size_t,                   # code_length
+            ctypes.POINTER(ctypes.c_long),     # input
+            ctypes.c_size_t,                   # input_length
+            ctypes.c_size_t,                   # max_output_length
+            ctypes.c_size_t,                   # max_iter
+            ctypes.POINTER(ctypes.c_size_t),   # output_count
+            ctypes.POINTER(ctypes.c_int),      # interp_status
+            ctypes.POINTER(ctypes.POINTER(ctypes.c_long)),  # final_mem_out
+            ctypes.POINTER(ctypes.c_size_t)    # final_mem_len_out
         ]
         self.lib.subleq_interpreter.restype = ctypes.POINTER(ctypes.c_long)
         
-        # Define free_output signature
+        # Define free helpers
         self.lib.free_output.argtypes = [ctypes.POINTER(ctypes.c_long)]
         self.lib.free_output.restype = None
+
+        self.lib.free_final_mem.argtypes = [ctypes.POINTER(ctypes.c_long)]
+        self.lib.free_final_mem.restype = None
     
     def run(self, 
             code: List[int], 
             input_data: List[int] = None,
             max_output_length: int = 10000,
-            max_iter: int = 1000000) -> Tuple[List[int], int]:
+            max_iter: int = 1000000) -> Tuple[List[int], List[int], int]:
         """
         Run SUBLEQ code.
         
@@ -58,8 +64,9 @@ class SubleqInterpreter:
             max_iter: Maximum number of iterations
             
         Returns:
-            Tuple of (output_list, status) where:
+            Tuple of (output_list, final_mem_state, status) where:
                 - output_list is a list of output integers
+                - final_mem_state is a list of output integers
                 - status is 0 for success, -1 for error
                 
         Raises:
@@ -75,6 +82,10 @@ class SubleqInterpreter:
         # Output parameters
         output_count = ctypes.c_size_t()
         interp_status = ctypes.c_int()
+
+        # NEW: final memory outputs
+        final_mem_ptr = ctypes.POINTER(ctypes.c_long)()
+        final_mem_len = ctypes.c_size_t(0)
         
         # Call the C function
         output_ptr = self.lib.subleq_interpreter(
@@ -85,25 +96,34 @@ class SubleqInterpreter:
             max_output_length,
             max_iter,
             ctypes.byref(output_count),
-            ctypes.byref(interp_status)
+            ctypes.byref(interp_status),
+            ctypes.byref(final_mem_ptr),
+            ctypes.byref(final_mem_len)
         )
         
-        # Convert output to Python list
-        output_list = []
-        if output_count.value > 0:
+        # Convert outputs to Python lists
+        output_list: List[int] = []
+        if output_count.value > 0 and bool(output_ptr):
             output_list = [output_ptr[i] for i in range(output_count.value)]
         
-        # Free the C-allocated memory
-        self.lib.free_output(output_ptr)
+        final_mem_list: List[int] = []
+        if final_mem_len.value > 0 and bool(final_mem_ptr):
+            final_mem_list = [final_mem_ptr[i] for i in range(final_mem_len.value)]
         
-        return output_list, interp_status.value
+        # Free the C-allocated memory
+        if bool(output_ptr):
+            self.lib.free_output(output_ptr)
+        if bool(final_mem_ptr):
+            self.lib.free_final_mem(final_mem_ptr)
+        
+        return output_list, final_mem_list, interp_status.value
 
 
 def subleq(code: List[int], 
-               input_data: List[int] = None,
-               max_output_length: int = 100000,
-               max_iter: int = 1000000,
-               library_path: str = None) -> Tuple[List[int], int]:
+           input_data: List[int] = None,
+           max_output_length: int = 100000,
+           max_iter: int = 1000000,
+           library_path: str = None) -> Tuple[List[int], List[int], int]:
     """
     Convenience function to run SUBLEQ code without creating an interpreter object.
     
@@ -115,7 +135,7 @@ def subleq(code: List[int],
         library_path: Path to the shared library (optional)
         
     Returns:
-        Tuple of (output_list, status)
+        (output_list, final_mem_state, status)
     """
     interpreter = SubleqInterpreter(library_path)
     return interpreter.run(code, input_data, max_output_length, max_iter)

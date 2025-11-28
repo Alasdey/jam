@@ -4,21 +4,37 @@
 
 /* --- Subleq Interpreter Implementation --- */
 
-// subleq_interpreter: Executes subleq code with bounded output and iteration count.
-//   - code: an array of longs representing the program (each 3 numbers is one instruction).
-//   - code_length: number of longs in the code array.
-//   - input: an array of input longs.
-//   - input_length: number of longs in the input array.
-//   - max_output_length: the maximum number of output longs allowed.
-//   - max_iter: the maximum number of iterations allowed.
-//   - output_count: pointer to a size_t that will hold the number of output longs produced.
-//   - interp_status: pointer to an int that will be set to 0 if interpretation finishes normally,
-//                    or -1 if an error occurs (out-of-bound access or max iterations reached).
-// Returns a dynamically allocated array of output longs (shrunk to the real output size).
+// Helper function to free the output array from Python
+void free_output(long *output) {
+    free(output);
+}
+
+// NEW: Helper to free the final memory array from Python
+void free_final_mem(long *ptr) {
+    free(ptr);
+}
+
+/*
+ subleq_interpreter: Executes subleq code with bounded output and iteration count.
+   - code: an array of longs representing the program (each 3 numbers is one instruction).
+   - code_length: number of longs in the code array.
+   - input: an array of input longs.
+   - input_length: number of longs in the input array.
+   - max_output_length: the maximum number of output longs allowed.
+   - max_iter: the maximum number of iterations allowed.
+   - output_count: pointer to a size_t that will hold the number of output longs produced.
+   - interp_status: pointer to an int that will be set to 0 if interpretation finishes normally,
+                    or -1 if an error occurs (out-of-bound access or max iterations reached).
+   - final_mem_out: pointer to a long* that will receive a newly allocated copy
+                    of the final memory state (length = code_length).
+   - final_mem_len_out: pointer to size_t that will be set to code_length.
+ Returns a dynamically allocated array of output longs (shrunk to the real output size).
+*/
 long* subleq_interpreter(const long *code, size_t code_length,
                            const long *input, size_t input_length,
                            size_t max_output_length, size_t max_iter,
-                           size_t *output_count, int *interp_status) {
+                         size_t *output_count, int *interp_status,
+                         long **final_mem_out, size_t *final_mem_len_out) {
     long *mem = malloc(code_length * sizeof(long));
     if (!mem) {
         fprintf(stderr, "Memory allocation failed\n");
@@ -32,6 +48,10 @@ long* subleq_interpreter(const long *code, size_t code_length,
         free(mem);
         exit(1);
     }
+
+    // Initialize new out parameters
+    if (final_mem_out) *final_mem_out = NULL;
+    if (final_mem_len_out) *final_mem_len_out = 0;
 
     size_t out_size = 0;
     size_t in_ptr = 0;
@@ -98,6 +118,19 @@ long* subleq_interpreter(const long *code, size_t code_length,
         }
     }
 
+    // NEW: capture final memory image before freeing internal buffer
+    if (final_mem_out && final_mem_len_out) {
+        long *final_mem = malloc(code_length * sizeof(long));
+        if (!final_mem) {
+            // If allocation fails, mark error but still return output
+            *interp_status = -1;
+        } else {
+            memcpy(final_mem, mem, code_length * sizeof(long));
+            *final_mem_out = final_mem;
+            *final_mem_len_out = code_length;
+        }
+    }
+
     free(mem);
 
     // Only shrink the output array if at least one element was produced.
@@ -109,9 +142,4 @@ long* subleq_interpreter(const long *code, size_t code_length,
     }
     *output_count = out_size;
     return output;
-}
-
-// Helper function to free the output array from Python
-void free_output(long *output) {
-    free(output);
 }
