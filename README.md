@@ -5,7 +5,7 @@ A jam trying to reach escape velocity.
 First try to recreate the missing rewards folder as it will not function without. \
 Also compile the subleq interpreter:
 ```bash
-gcc -shared -fPIC -o interpreters/libsubleq.so interpreters/subleq.c
+gcc -shared -fPIC -o interpreters/subleq/libsubleq.so interpreters/subleq/subleq.c
 python3 main.py
 ```
 
@@ -15,4 +15,4 @@ Make a wrapper for the rewards \
 Build a logging system \
 Improve the payoff computation \
 Import the Nash set computation \
-Import the Genetic Programming \
+Import the Genetic Programming 

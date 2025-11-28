@@ -5,7 +5,7 @@ from typing import List, Tuple
 class SubleqInterpreter:
     """Python wrapper for the SUBLEQ interpreter C library."""
     
-    def __init__(self, library_path: str = "./interpreters/libsubleq.so"):
+    def __init__(self, library_path: str = "./interpreters/subleq/libsubleq.so"):
         """
         Initialize the SUBLEQ interpreter.
         
@@ -123,7 +123,7 @@ def subleq(code: List[int],
            input_data: List[int] = None,
            max_output_length: int = 100000,
            max_iter: int = 1000000,
-           library_path: str = "./interpreters/libsubleq.so") -> Tuple[List[int], List[int], int]:
+           library_path: str = "./interpreters/subleq/libsubleq.so") -> Tuple[List[int], List[int], int]:
     """
     Convenience function to run SUBLEQ code without creating an interpreter object.
     
