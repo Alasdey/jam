@@ -2,7 +2,7 @@
 A jam trying to reach escape velocity.
 
 ## To use
-First try to recreate the missing rewards folder as it will not function without. \
+First try to recreate the missing rewards files as it will not function without. \
 Also compile the subleq interpreter:
 ```bash
 gcc -shared -fPIC -o interpreters/subleq/libsubleq.so interpreters/subleq/subleq.c
