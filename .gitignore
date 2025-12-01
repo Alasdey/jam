@@ -1,6 +1,7 @@
 # From the project
 rewards/reward*
 libsubleq.so
+outputs*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

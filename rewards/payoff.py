@@ -1,13 +1,13 @@
 import numpy as np
 from typing import List, Callable
-from interpreters.subleq.subleq import subleq
 from concurrent.futures import ProcessPoolExecutor
 
+from interpreters.subleq.subleq import SubleqInterpreter
 
 def _compute_single_matchup(args):
     """Helper function for parallel computation of a single matchup."""
     i, j, code_a, code_b, reward_fn = args
-    interp = subleq()
+    interp = SubleqInterpreter()
     reward = reward_fn(interp, code_a, code_b)
     return (i, j, reward)
 
@@ -15,7 +15,7 @@ def _compute_single_matchup(args):
 def compute_payoff_matrix(
     ref: List[List[int]], 
     pop: List[List[int]],
-    reward_fn: Callable[[subleq, List[int], List[int]], int],
+    reward_fn: Callable[[SubleqInterpreter, List[int], List[int]], int],
     n_workers: int = 1
 ) -> np.ndarray:
     """
@@ -37,7 +37,7 @@ def compute_payoff_matrix(
     
     if n_workers == 1:
         # Sequential computation with single interpreter instance
-        interp = subleq()
+        interp = SubleqInterpreter()
         for i in range(n_ref):
             for j in range(n_pop):
                 payoff_matrix[i, j] = reward_fn(interp, ref[i], pop[j])
