@@ -1,6 +1,9 @@
+
 import ctypes
 import os
 from typing import List, Tuple
+
+from config import SubleqConfig
 
 class SubleqInterpreter:
     """Python wrapper for the SUBLEQ interpreter C library."""
@@ -120,22 +123,22 @@ class SubleqInterpreter:
 
 
 def subleq(code: List[int], 
-           input_data: List[int] = None,
-           max_output_length: int = 100000,
-           max_iter: int = 1000000,
-           library_path: str = "./interpreters/subleq/libsubleq.so") -> Tuple[List[int], List[int], int]:
+           input_data: List[int],
+           cfg: SubleqConfig) -> Tuple[List[int], List[int], int]:
     """
     Convenience function to run SUBLEQ code without creating an interpreter object.
     
     Args:
         code: List of integers representing the SUBLEQ program
         input_data: List of input integers (optional)
-        max_output_length: Maximum number of output values
-        max_iter: Maximum number of iterations
-        library_path: Path to the shared library (optional)
+        cfg: SubleqConfig with
+            max_output_length: Maximum number of output values
+            max_iter: Maximum number of iterations
+            library_path: Path to the shared library (optional)
         
     Returns:
         (output_list, final_mem_state, status)
     """
-    interpreter = SubleqInterpreter(library_path)
-    return interpreter.run(code, input_data, max_output_length, max_iter)
+
+    interpreter = SubleqInterpreter(cfg.library_path)
+    return interpreter.run(code, input_data, cfg.max_output_length, cfg.max_iter)

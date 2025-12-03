@@ -1,32 +1,54 @@
+
 import numpy as np
 from typing import List, Callable
 from concurrent.futures import ProcessPoolExecutor
 
-from interpreters.subleq.subleq import SubleqInterpreter
+from config import ExperimentConfig
+from interpreters.wrapper import make_interpreter
+from rewards.wrapper import make_reward
+
+
+# These will be "per-process" globals in worker processes
+_INTERP = None
+_REWARD_FN: Callable | None = None
+
+
+def _init_worker(cfg: ExperimentConfig, reward_fn: Callable):
+    """
+    Called once in each worker process.
+    Builds the interpreter and stores the reward function as per-process globals.
+    """
+    global _INTERP, _REWARD_FN
+    _INTERP = make_interpreter(cfg)     # interpreter built ONCE per worker
+    _REWARD_FN = make_reward(cfg)       # top-level function, picklable
+
 
 def _compute_single_matchup(args):
-    """Helper function for parallel computation of a single matchup."""
-    i, j, code_a, code_b, reward_fn = args
-    interp = SubleqInterpreter()
-    reward = reward_fn(interp, code_a, code_b)
-    return (i, j, reward)
+    """
+    Worker function that computes reward for a single (i, j) matchup.
+    Uses per-process globals _INTERP and _REWARD_FN.
+    """
+    global _INTERP, _REWARD_FN
+    i, j, code_a, code_b = args
+    reward = _REWARD_FN(_INTERP, code_a, code_b, cfg.interpreter)  # type: ignore[arg-type]
+    return i, j, reward
 
 
 def compute_payoff_matrix(
-    ref: List[List[int]], 
+    cfg: ExperimentConfig,
+    ref: List[List[int]],
     pop: List[List[int]],
-    reward_fn: Callable[[SubleqInterpreter, List[int], List[int]], int],
-    n_workers: int = 1
+    reward_fn: Callable,
 ) -> np.ndarray:
     """
-    Compute the payoff matrix for two populations in a symmetric zero-sum game.
-    
+    Compute payoff matrix for ref x pop using given reward_fn and interpreter from cfg.
+
     Args:
-        ref: Reference population, list of SUBLEQ programs (each program is a List[int])
-        pop: Current population, list of SUBLEQ programs
-        reward_fn: Reward function that takes (interpreter, code_a, code_b) and returns reward for a
-        n_workers: Number of worker processes (1 = sequential, >1 = parallel)
-        
+        cfg: ExperimentConfig with interpreter + payoff settings.
+        ref: Reference population (list of programs).
+        pop: Population to evaluate (list of programs).
+        reward_fn: reward(interp, code_a, code_b) -> int
+
     Returns:
         Payoff matrix of shape (len(ref), len(pop)) where entry [i, j] is the reward
         for ref[i] playing against pop[j]
@@ -34,25 +56,29 @@ def compute_payoff_matrix(
     n_ref = len(ref)
     n_pop = len(pop)
     payoff_matrix = np.zeros((n_ref, n_pop), dtype=int)
-    
+
+    n_workers = cfg.payoff.n_workers
+
+    # --- Sequential path (simpler, good for debugging) ---
     if n_workers == 1:
-        # Sequential computation with single interpreter instance
-        interp = SubleqInterpreter()
+        interp = make_interpreter(cfg)
         for i in range(n_ref):
             for j in range(n_pop):
                 payoff_matrix[i, j] = reward_fn(interp, ref[i], pop[j])
-    else:
-        # Parallel computation
-        matchups = [
-            (i, j, ref[i], pop[j], reward_fn)
-            for i in range(n_ref)
-            for j in range(n_pop)
-        ]
-        
-        with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            results = executor.map(_compute_single_matchup, matchups)
-            
-            for i, j, reward in results:
-                payoff_matrix[i, j] = reward
-    
+
+    # --- Parallel path ---
+    matchups = [
+        (i, j, ref[i], pop[j])
+        for i in range(n_ref)
+        for j in range(n_pop)
+    ]
+
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_init_worker,
+        initargs=(cfg, reward_fn),
+    ) as executor:
+        for i, j, r in executor.map(_compute_single_matchup, matchups):
+            payoff_matrix[i, j] = r
+
     return payoff_matrix

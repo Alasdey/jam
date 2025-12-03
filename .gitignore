@@ -1,5 +1,6 @@
 # From the project
-rewards/reward*
+rewards/*
+!rewards/placeholder_reward.py
 libsubleq.so
 outputs*
 
