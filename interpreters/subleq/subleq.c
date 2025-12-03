@@ -9,7 +9,7 @@ void free_output(long *output) {
     free(output);
 }
 
-// NEW: Helper to free the final memory array from Python
+// Helper to free the final memory array from Python
 void free_final_mem(long *ptr) {
     free(ptr);
 }
