@@ -25,7 +25,7 @@ class SubleqConfig:
 @dataclass
 class PayoffConfig:
     # 1 = sequential, >1 = use ProcessPoolExecutor
-    n_workers: int = 1
+    n_workers: int = 6
 
 
 # --- Experiment config ---
@@ -48,6 +48,7 @@ class ExperimentConfig:
 class RandomBaselineConfig:
     n_ref: int = 10**3
     n_tested: int = 10**7
+    n_grain: int = 500
     out_path: str = "outputs/random_baseline/" + time.strftime("%Y%m%d_%H%M%S")
     out_name: str = "results.json"
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)

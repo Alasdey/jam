@@ -1,14 +1,19 @@
 
 import ctypes
 import os
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from config import SubleqConfig
 
 class SubleqInterpreter:
     """Python wrapper for the SUBLEQ interpreter C library."""
     
-    def __init__(self, library_path: str = "./interpreters/subleq/libsubleq.so"):
+    def __init__(
+            self, 
+            library_path: str = "./interpreters/subleq/libsubleq.so", 
+            max_output_length: int = 10000, 
+            max_iter: int = 1000000
+        ):
         """
         Initialize the SUBLEQ interpreter.
         
@@ -23,6 +28,9 @@ class SubleqInterpreter:
             else:  # Linux/Mac
                 library_path = './libsubleq.so'
         
+        self.max_output_length = max_output_length
+        self.max_iter = max_iter
+
         self.lib = ctypes.CDLL(library_path)
         
         # Define the function signature
@@ -52,11 +60,13 @@ class SubleqInterpreter:
         self.lib.free_final_mem.argtypes = [ctypes.POINTER(ctypes.c_long)]
         self.lib.free_final_mem.restype = None
     
-    def run(self, 
+    def run(
+            self, 
             code: List[int], 
             input_data: List[int] = None,
-            max_output_length: int = 10000,
-            max_iter: int = 1000000) -> Tuple[List[int], List[int], int]:
+            max_output_length: Optional[int] = None,
+            max_iter: Optional[int] = None
+        ) -> Tuple[List[int], List[int], int]:
         """
         Run SUBLEQ code.
         
@@ -78,6 +88,11 @@ class SubleqInterpreter:
         if input_data is None:
             input_data = []
         
+        if max_output_length is None:
+            max_output_length = self.max_output_length
+        if max_iter is None:
+            max_iter = self.max_iter
+
         # Convert Python lists to C arrays
         code_array = (ctypes.c_long * len(code))(*code)
         input_array = (ctypes.c_long * len(input_data))(*input_data) if input_data else None
@@ -122,23 +137,23 @@ class SubleqInterpreter:
         return output_list, final_mem_list, interp_status.value
 
 
-def subleq(code: List[int], 
-           input_data: List[int],
-           cfg: SubleqConfig) -> Tuple[List[int], List[int], int]:
-    """
-    Convenience function to run SUBLEQ code without creating an interpreter object.
+# def subleq(code: List[int], 
+#            input_data: List[int],
+#            cfg: SubleqConfig) -> Tuple[List[int], List[int], int]:
+#     """
+#     Convenience function to run SUBLEQ code without creating an interpreter object.
     
-    Args:
-        code: List of integers representing the SUBLEQ program
-        input_data: List of input integers (optional)
-        cfg: SubleqConfig with
-            max_output_length: Maximum number of output values
-            max_iter: Maximum number of iterations
-            library_path: Path to the shared library (optional)
+#     Args:
+#         code: List of integers representing the SUBLEQ program
+#         input_data: List of input integers (optional)
+#         cfg: SubleqConfig with
+#             max_output_length: Maximum number of output values
+#             max_iter: Maximum number of iterations
+#             library_path: Path to the shared library (optional)
         
-    Returns:
-        (output_list, final_mem_state, status)
-    """
+#     Returns:
+#         (output_list, final_mem_state, status)
+#     """
 
-    interpreter = SubleqInterpreter(cfg.library_path)
-    return interpreter.run(code, input_data, cfg.max_output_length, cfg.max_iter)
+#     interpreter = SubleqInterpreter(cfg.library_path)
+#     return interpreter.run(code, input_data, cfg.max_output_length, cfg.max_iter)

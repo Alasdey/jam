@@ -19,7 +19,7 @@ def _init_worker(cfg: ExperimentConfig, reward_fn: Callable):
     Builds the interpreter and stores the reward function as per-process globals.
     """
     global _INTERP, _REWARD_FN
-    _INTERP = make_interpreter(cfg)     # interpreter built ONCE per worker
+    _INTERP = make_interpreter(cfg)     # intesrpreter built ONCE per worker
     _REWARD_FN = make_reward(cfg)       # top-level function, picklable
 
 
@@ -30,7 +30,7 @@ def _compute_single_matchup(args):
     """
     global _INTERP, _REWARD_FN
     i, j, code_a, code_b = args
-    reward = _REWARD_FN(_INTERP, code_a, code_b, cfg.interpreter)  # type: ignore[arg-type]
+    reward = _REWARD_FN(_INTERP, code_a, code_b)  # type: ignore[arg-type]
     return i, j, reward
 
 
@@ -65,7 +65,8 @@ def compute_payoff_matrix(
         for i in range(n_ref):
             for j in range(n_pop):
                 payoff_matrix[i, j] = reward_fn(interp, ref[i], pop[j])
-
+        return payoff_matrix
+    
     # --- Parallel path ---
     matchups = [
         (i, j, ref[i], pop[j])

@@ -10,6 +10,8 @@ def make_subleq_interpreter(cfg: SubleqConfig) -> SubleqInterpreter:
     """
     return SubleqInterpreter(
         library_path=cfg.library_path,
+        max_output_length=cfg.max_output_length,
+        max_iter=cfg.max_iter,
     )
 
 
@@ -18,7 +20,7 @@ def make_interpreter(cfg: ExperimentConfig):
     Top-level interpreter factory.
     Decides which interpreter to build based on cfg.interpreter.
     """
-    if cfg.interpreter_name == "subleq":
+    if cfg.interpreter == "subleq":
         return make_subleq_interpreter(cfg.subleq)
 
     raise ValueError(f"Unknown interpreter: {cfg.interpreter_name}")
