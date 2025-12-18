@@ -25,7 +25,7 @@ class SubleqConfig:
 @dataclass
 class PayoffConfig:
     # 1 = sequential, >1 = use ProcessPoolExecutor
-    n_workers: int = 6
+    n_workers: int = 5
 
 
 # --- Experiment config ---

@@ -1,4 +1,5 @@
 # From the project
+test_bay.ipynb
 rewards/*
 !rewards/placeholder_reward.py
 !rewards/wrapper.py
