@@ -134,7 +134,8 @@ class SubleqInterpreter:
         if bool(final_mem_ptr):
             self.lib.free_final_mem(final_mem_ptr)
         
-        return output_list, final_mem_list, interp_status.value
+        # return output_list, final_mem_list, interp_status.value
+        return output_list, final_mem_list
 
 
 # def subleq(code: List[int], 

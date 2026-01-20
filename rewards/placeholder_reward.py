@@ -8,8 +8,8 @@ def reward(interpreter, code_a: List[int], code_b: List[int]) -> int:
     The more the better for A 
     """
     staple = [0, 1, 2, 3, 4, 5]
-    out_a = interpreter.run(code_a, staple)
-    out_b = interpreter.run(code_b, staple)
+    out_a, _ = interpreter.run(code_a, staple)
+    out_b, _ = interpreter.run(code_b, staple)
     
     if len(out_a) == len(out_b):
         return 0

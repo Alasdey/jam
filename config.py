@@ -10,15 +10,23 @@ class CodeConfig:
     min_val: int = -500
     max_val: int = 1000
 
+@dataclass
+class RuleConfig:
+    code_length: int = 500
+    min_val: int = 0
+    max_val: int = 1_000_000
 
 # --- Interpreter-specific config ---
+
+@dataclass
+class IconfractranConfig:
+    max_step: int = 20_000
 
 @dataclass
 class SubleqConfig:
     library_path: str = "./interpreters/subleq/libsubleq.so" # Should this be hardcoded in the subleq code ?
     max_output_length: int = 2_000
     max_iter: int = 20_000
-
 
 # --- Payoff / parallelism config ---
 
@@ -32,14 +40,17 @@ class PayoffConfig:
 
 @dataclass
 class ExperimentConfig:
-    # Which interpreter / reward to use (later: "brainfuck", etc.)
+    # Which interpreter / reward to use
     interpreter: str = "subleq"
     reward: str = "blind"
 
-    # Sub-configs
+    ### Sub-configs
     subleq: SubleqConfig = field(default_factory=SubleqConfig)
+    
     payoff: PayoffConfig = field(default_factory=PayoffConfig)
-    code: CodeConfig = field(default_factory=CodeConfig)
+
+    # code: CodeConfig = field(default_factory=CodeConfig)
+    code: RuleConfig = field(default_factory=RuleConfig)
 
 
 # --- Random baseline experiment config ---
