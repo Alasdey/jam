@@ -8,19 +8,19 @@ from dataclasses import dataclass, field
 class CodeConfig:
     code_length: int = 500
     min_val: int = -500
-    max_val: int = 1000
+    max_val: int = 1_000
 
 @dataclass
 class RuleConfig:
-    code_length: int = 500
+    code_length: int = 50
     min_val: int = 0
-    max_val: int = 1_000_000
+    max_val: int = 100
 
 # --- Interpreter-specific config ---
 
 @dataclass
 class IconfractranConfig:
-    max_step: int = 20_000
+    max_step: int = 200
 
 @dataclass
 class SubleqConfig:
@@ -40,12 +40,14 @@ class PayoffConfig:
 
 @dataclass
 class ExperimentConfig:
-    # Which interpreter / reward to use
-    interpreter: str = "subleq"
+    ### Which interpreter / reward to use
+    # interpreter: str = "subleq"
+    interpreter: str = "iconfractran"
     reward: str = "blind"
 
     ### Sub-configs
     subleq: SubleqConfig = field(default_factory=SubleqConfig)
+    iconfractran: IconfractranConfig = field(default_factory=IconfractranConfig)
     
     payoff: PayoffConfig = field(default_factory=PayoffConfig)
 
@@ -57,7 +59,7 @@ class ExperimentConfig:
 
 @dataclass
 class RandomBaselineConfig:
-    n_ref: int = 10**3
+    n_ref: int = 10**1
     n_tested: int = 10**7
     n_grain: int = 500
     out_path: str = "outputs/random_baseline/" + time.strftime("%Y%m%d_%H%M%S")

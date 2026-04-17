@@ -2,7 +2,7 @@
 
 from config import ExperimentConfig, SubleqConfig, IconfractranConfig
 from interpreters.subleq.subleq import SubleqInterpreter
-from interpreters.iconfractran import IconfractranInterpreter
+from interpreters.iconfractran.iconfractran import IconfractranInterpreter
 
 
 def make_subleq_interpreter(cfg: SubleqConfig) -> SubleqInterpreter:
