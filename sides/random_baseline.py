@@ -60,8 +60,8 @@ def main(rb_cfg: RandomBaselineConfig) -> None:
                 json.dump(score, f)
                 f.write("\n")
                 if score/len(ref_pop)>0.7:
-                    with open(rb_cfg.out_path + "/" + "bests.json") as f:
-                        json.dump([idx, score, pool[idx]])
+                    with open(rb_cfg.out_path + "/" + "bests.json", "a") as f:
+                        json.dump([idx, score, pool[idx]], f)
                         f.write("\n")
 
 
