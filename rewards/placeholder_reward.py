@@ -15,4 +15,4 @@ def reward(interpreter, code_a: List[int], code_b: List[int]) -> int:
         return 0
     elif len(out_a) > len(out_b):
         return 1
-    return 0
+    return -1
