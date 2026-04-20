@@ -1,6 +1,9 @@
 import random
 from typing import List
 
+from config import ExperimentConfig
+from interpreters.treemo.treemo import gen_tree
+
 
 def random_code(length: int, 
                 min_value: int, 
@@ -38,7 +41,17 @@ def random_population(pop_size: int,
     Returns:
         List of SUBLEQ programs
     """
-    pop = [random_code(code_length, min_value, max_value) 
+    pop = [random_code(code_length, min_value, max_value)
             for _ in range(pop_size)]
-    
+
     return pop
+
+
+def random_tree_population(pop_size: int, tree_size: int) -> List[str]:
+    return [gen_tree(tree_size) for _ in range(pop_size)]
+
+
+def make_random_population(cfg: ExperimentConfig, pop_size: int) -> list:
+    if cfg.interpreter == "treemo":
+        return random_tree_population(pop_size, cfg.treemo.tree_size)
+    return random_population(pop_size, cfg.code.code_length, cfg.code.min_val, cfg.code.max_val)

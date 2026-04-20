@@ -9,7 +9,7 @@ from typing import Optional
 from selection.nash_set import compute_nash_equilibrium, compute_nash_subset
 from selection.skim import iterated_elimination_strictly_dominated_rows, iterated_elimination_strictly_dominated_rows_fast
 from rewards.payoff import compute_payoff_matrix
-from utils.pop_init import random_population
+from utils.pop_init import make_random_population
 from config import ExperimentConfig
 from rewards.wrapper import make_reward
 
@@ -27,12 +27,7 @@ def main(
     payoff = compute_payoff_matrix(cfg, pop, pop, reward_fn)
     for i in range(n_iter):
         n_old = len(pop)
-        pop += random_population(
-            n_pop, 
-            cfg.code.code_length, 
-            cfg.code.min_val, 
-            cfg.code.max_val,
-        )
+        pop += make_random_population(cfg, n_pop)
         print(f"Starting gen {i}, with population {len(pop)}")
         t0 = time.time()
         payoff_new_new = compute_payoff_matrix(cfg, pop[n_old:], pop[n_old:], reward_fn)
@@ -65,7 +60,7 @@ def main(
 
 if __name__ == "__main__":
     n_skim = 2
-    n_pop = 100
+    n_pop = 10
     n_iter = 10**7
     n_accepted = 2000
     out_dir_path = "outputs/random_skimmed/" + time.strftime("%Y%m%d_%H%M%S")

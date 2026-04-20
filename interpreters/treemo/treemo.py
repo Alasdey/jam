@@ -1,7 +1,6 @@
 
-from typing import List
+from typing import List, Tuple
 from random import randint
-from time import time
 
 def gen_tree(n: int=3) -> str:
     """
@@ -107,7 +106,7 @@ def tree_to_dot(code: str) -> str:
     return dot
 
 
-def treemo(code: List[str], inp: List[str], max_step: int=5) -> List[str]:
+def treemo(code: str, inp: str, max_step: int = 5) -> str:
     """
     """
     rules = tree_to_rules(code)
@@ -115,14 +114,10 @@ def treemo(code: List[str], inp: List[str], max_step: int=5) -> List[str]:
     return res
 
 
-t0 = time()
+class TreemoInterpreter:
+    def __init__(self, max_step: int = 50):
+        self.max_step = max_step
 
-size = 50
-
-
-a = gen_tree(10**3)
-
-with open('temp.txt', 'w') as f:
-    f.write(tree_to_dot(a))
-
-print(time()-t0)
+    def run(self, code: str, inp: str) -> Tuple[str, str]:
+        result = treemo(code, inp, max_step=self.max_step)
+        return result, code

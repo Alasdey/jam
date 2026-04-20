@@ -1,8 +1,9 @@
 # interpreters/wrappers.py
 
-from config import ExperimentConfig, SubleqConfig, IconfractranConfig
+from config import ExperimentConfig, SubleqConfig, IconfractranConfig, TreemoConfig
 from interpreters.subleq.subleq import SubleqInterpreter
 from interpreters.iconfractran.iconfractran import IconfractranInterpreter
+from interpreters.treemo.treemo import TreemoInterpreter
 
 
 def make_subleq_interpreter(cfg: SubleqConfig) -> SubleqInterpreter:
@@ -21,6 +22,12 @@ def make_iconfractran_interpreter(cfg: IconfractranConfig):
     """
     return IconfractranInterpreter(max_step=cfg.max_step)
 
+def make_treemo_interpreter(cfg: TreemoConfig) -> TreemoInterpreter:
+    """
+    Build a TreemoInterpreter from its specific config.
+    """
+    return TreemoInterpreter(max_step=cfg.max_step)
+
 def make_interpreter(cfg: ExperimentConfig):
     """
     Top-level interpreter factory.
@@ -30,5 +37,7 @@ def make_interpreter(cfg: ExperimentConfig):
         return make_subleq_interpreter(cfg.subleq)
     if cfg.interpreter == "iconfractran":
         return make_iconfractran_interpreter(cfg.iconfractran)
+    if cfg.interpreter == "treemo":
+        return make_treemo_interpreter(cfg.treemo)
 
-    raise ValueError(f"Unknown interpreter: {cfg.interpreter_name}")
+    raise ValueError(f"Unknown interpreter: {cfg.interpreter}")

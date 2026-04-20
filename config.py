@@ -23,6 +23,11 @@ class IconfractranConfig:
     max_step: int = 200
 
 @dataclass
+class TreemoConfig:
+    max_step: int = 50
+    tree_size: int = 100
+
+@dataclass
 class SubleqConfig:
     library_path: str = "./interpreters/subleq/libsubleq.so" # Should this be hardcoded in the subleq code ?
     max_output_length: int = 2_000
@@ -48,6 +53,7 @@ class ExperimentConfig:
     ### Sub-configs
     subleq: SubleqConfig = field(default_factory=SubleqConfig)
     iconfractran: IconfractranConfig = field(default_factory=IconfractranConfig)
+    treemo: TreemoConfig = field(default_factory=TreemoConfig)
     
     payoff: PayoffConfig = field(default_factory=PayoffConfig)
 
