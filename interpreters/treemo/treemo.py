@@ -118,37 +118,6 @@ def treemo(code: List[str], inp: List[str], max_step: int=5) -> List[str]:
 t0 = time()
 
 size = 50
-# step = 1000
-# npop = 1000
-# nref = 100
-
-# pop = [gen_tree(size) for _ in range(npop)]
-# ref = [gen_tree(size) for _ in range(nref)]
-# res = []
-# score = []
-# for a in pop:
-#     temp = []
-#     score.append(0)
-#     for b in ref:
-#         alead = ((treemo(a, treemo(a, b, step))==treemo(b, treemo(a, b, step))))
-#         blead = ((treemo(b, treemo(b, a, step))==treemo(a, treemo(b, a, step))))
-#         temp.append(alead!=blead)
-#         if alead!=blead:
-#             if blead == True:
-#                 score[-1] += 1
-#             else:
-#                 score[-1] += -1
-#     res.append(temp.count(True))
-
-
-# z = res.count(0)
-# m = res.count(nref)
-# h = len(res) - z - m
-
-# print(res)
-# print(score)
-# print(min(score), sum(score)/len(score), max(score))
-# print(z, h, m)
 
 
 a = gen_tree(10**3)
