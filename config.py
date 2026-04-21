@@ -41,6 +41,25 @@ class PayoffConfig:
     n_workers: int = 1
 
 
+# --- Genetics / operator config ---
+
+@dataclass
+class GeneticsConfig:
+    mutation_rate: float = 0.05
+    crossover_prob: float = 0.5
+    homoiconic_prob: float = 0.3
+
+    # Integer-program operator selection ("uniform" | "creep")
+    code_mutation_op: str = "uniform"
+    # ("single_point" | "two_point" | "uniform")
+    code_crossover_op: str = "single_point"
+
+    # Tree operator selection ("leaf" | "subtree")
+    tree_mutation_op: str = "leaf"
+    # ("depth1" | "random_depth")
+    tree_crossover_op: str = "depth1"
+
+
 # --- Experiment config ---
 
 @dataclass
@@ -54,8 +73,9 @@ class ExperimentConfig:
     subleq: SubleqConfig = field(default_factory=SubleqConfig)
     iconfractran: IconfractranConfig = field(default_factory=IconfractranConfig)
     treemo: TreemoConfig = field(default_factory=TreemoConfig)
-    
+
     payoff: PayoffConfig = field(default_factory=PayoffConfig)
+    genetics: GeneticsConfig = field(default_factory=GeneticsConfig)
 
     # code: CodeConfig = field(default_factory=CodeConfig)
     code: RuleConfig = field(default_factory=RuleConfig)
