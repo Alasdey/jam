@@ -2,29 +2,24 @@
 from typing import List, Tuple
 from random import randint
 
-def gen_tree(n: int=3) -> str:
-    """
-    """
-    res = '('
+def gen_tree(n: int=3) -> List[int]:
+    res = [1]
     space = 0
     dept = space
     for _ in range(n-1):
         space = randint(1, space+1)
-        res += ')' * (dept+1-space) 
-        res += '('
+        res += [0] * (dept+1-space)
+        res += [1]
         dept = space
-    res += ')' * (dept+1)
+    res += [0] * (dept+1)
     return res
 
-def tree_to_parent_list(code: List[str]) -> List[str]:
-    """
-    """
-    # Condition on correctness of the code
-    assert len(code) % 2 == 0 
+def tree_to_parent_list(code: List[int]) -> List[int]:
+    assert len(code) % 2 == 0
     parent = [-1]
     current = 0
     for i in range(len(code)):
-        if code[i] == '(':
+        if code[i] == 1:
             parent.append(current)
             current = len(parent)-1
         else:
@@ -32,7 +27,7 @@ def tree_to_parent_list(code: List[str]) -> List[str]:
             parent.append(current)
     return parent
 
-def greedy_pairs(tree: List[int]) -> List[List[str]]:
+def greedy_pairs(tree: List[int]) -> List[List[int]]:
     """
     """
     m = []
@@ -52,46 +47,47 @@ def extract(tree, inds):
     """
     return tree[inds[0]:inds[1]]
 
-def tree_to_rules(code: List[str]):
-    """
-    Takes a list of 0 and 1 that represent a tree as an input
-    and outputs the corresponding list of match and replace rules
-    args:
-        code: List[str]
-    """
+def tree_to_rules(code: List[int]):
     tree = tree_to_parent_list(code)
     m, r = greedy_pairs(tree)
     res = [(extract(code, m[i]), extract(code, r[i])) for i in range(len(m))]
     return res
 
-def interpret(rules: List[tuple[str]], input: str, max_step:int=5) -> str:
-    """
-    """
-    res = input
+def _list_find(haystack: List[int], needle: List[int]) -> int:
+    n = len(needle)
+    if n == 0:
+        return 0
+    for i in range(len(haystack) - n + 1):
+        if haystack[i:i+n] == needle:
+            return i
+    return -1
+
+
+def interpret(rules: List[tuple], inp: List[int], max_step: int=5) -> List[int]:
+    res = list(inp)
     something_happened = True
     step = 0
     while something_happened and step < max_step:
         step += 1
         something_happened = False
         for rule in rules:
-            if rule[0] in res:
+            idx = _list_find(res, rule[0])
+            if idx != -1:
                 if rule[0] == rule[1]:
-                    # print('stopping condition')
                     return res
-                res = res.replace(rule[0], rule[1], 1)
+                res = res[:idx] + list(rule[1]) + res[idx + len(rule[0]):]
                 something_happened = True
                 break
-    # print("step reached", step)
     return res
 
 
-def tree_to_dot(code: str) -> str:
+def tree_to_dot(code: List[int]) -> str:
     edges = []
     stack = []
     node_id = 0
 
-    for char in code:
-        if char == '(':
+    for elem in code:
+        if elem == 1:
             current = node_id
             node_id += 1
             if stack:
@@ -106,9 +102,7 @@ def tree_to_dot(code: str) -> str:
     return dot
 
 
-def treemo(code: str, inp: str, max_step: int = 5) -> str:
-    """
-    """
+def treemo(code: List[int], inp: List[int], max_step: int = 5) -> List[int]:
     rules = tree_to_rules(code)
     res = interpret(rules, inp, max_step)
     return res
@@ -118,6 +112,6 @@ class TreemoInterpreter:
     def __init__(self, max_step: int = 50):
         self.max_step = max_step
 
-    def run(self, code: str, inp: str) -> Tuple[str, str]:
+    def run(self, code: List[int], inp: List[int]) -> Tuple[List[int], List[int]]:
         result = treemo(code, inp, max_step=self.max_step)
         return result, code

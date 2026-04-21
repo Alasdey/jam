@@ -47,7 +47,7 @@ def random_population(pop_size: int,
     return pop
 
 
-def random_tree_population(pop_size: int, tree_size: int) -> List[str]:
+def random_tree_population(pop_size: int, tree_size: int) -> List[List[int]]:
     return [gen_tree(tree_size) for _ in range(pop_size)]
 
 

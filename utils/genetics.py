@@ -7,7 +7,7 @@ from config import ExperimentConfig
 
 # ── Type aliases ──────────────────────────────────────────────────────────────
 
-Program = Any  # List[int] for code interpreters, str for treemo
+Program = Any  # List[int] for all interpreters
 MutateFn = Callable[[Program, float], Program]    # (prog, rate) -> prog
 CrossoverFn = Callable[[Program, Program], Program]
 
@@ -66,29 +66,29 @@ def crossover_code_uniform(code_a: List[int], code_b: List[int]) -> List[int]:
 
 # ── Tree helpers ───────────────────────────────────────────────────────────────
 
-def _is_balanced(s: str) -> bool:
+def _is_balanced(s: List[int]) -> bool:
     depth = 0
     for ch in s:
-        if ch == '(':
+        if ch == 1:
             depth += 1
-        elif ch == ')':
+        elif ch == 0:
             depth -= 1
             if depth < 0:
                 return False
     return depth == 0
 
 
-def _subtrees_at_depth(tree: str, target_depth: int) -> List[tuple]:
-    """Return (start, end) spans of subtrees whose opening '(' is at target_depth."""
+def _subtrees_at_depth(tree: List[int], target_depth: int) -> List[tuple]:
+    """Return (start, end) spans of subtrees whose opening node is at target_depth."""
     spans = []
     depth = 0
     start = None
     for i, ch in enumerate(tree):
-        if ch == '(':
+        if ch == 1:
             if depth == target_depth:
                 start = i
             depth += 1
-        elif ch == ')':
+        elif ch == 0:
             depth -= 1
             if depth == target_depth and start is not None:
                 spans.append((start, i + 1))
@@ -96,16 +96,16 @@ def _subtrees_at_depth(tree: str, target_depth: int) -> List[tuple]:
     return spans
 
 
-def _all_subtree_spans(tree: str) -> List[tuple]:
+def _all_subtree_spans(tree: List[int]) -> List[tuple]:
     """Return (start, end) spans for every non-root subtree (depth > 1)."""
     spans: List[tuple] = []
     depth = 0
     stack: List[int] = []
     for i, ch in enumerate(tree):
-        if ch == '(':
+        if ch == 1:
             stack.append(i)
             depth += 1
-        elif ch == ')':
+        elif ch == 0:
             if stack:
                 s = stack.pop()
                 if depth > 1:  # skip the root subtree (whole tree)
@@ -114,25 +114,25 @@ def _all_subtree_spans(tree: str) -> List[tuple]:
     return spans
 
 
-def _leaf_positions(tree: str) -> List[int]:
-    return [i for i in range(len(tree) - 1) if tree[i] == '(' and tree[i + 1] == ')']
+def _leaf_positions(tree: List[int]) -> List[int]:
+    return [i for i in range(len(tree) - 1) if tree[i] == 1 and tree[i + 1] == 0]
 
 
-def _tree_max_depth(tree: str) -> int:
+def _tree_max_depth(tree: List[int]) -> int:
     d = md = 0
     for ch in tree:
-        if ch == '(':
+        if ch == 1:
             d += 1
             if d > md:
                 md = d
-        elif ch == ')':
+        elif ch == 0:
             d -= 1
     return md
 
 
 # ── Tree operators ─────────────────────────────────────────────────────────────
 
-def mutate_tree_leaf(tree: str, rate: float) -> str:
+def mutate_tree_leaf(tree: List[int], rate: float) -> List[int]:
     """Randomly expand or contract a leaf node."""
     if not tree or random.random() > rate:
         return tree
@@ -141,23 +141,23 @@ def mutate_tree_leaf(tree: str, rate: float) -> str:
         return tree
     idx = random.choice(leaves)
     if random.random() < 0.5 and len(tree) > 2:
-        return tree[:idx] + tree[idx + 2:]           # contract: delete leaf ()
+        return tree[:idx] + tree[idx + 2:]              # contract: delete leaf [1,0]
     else:
-        return tree[:idx] + '(())' + tree[idx + 2:]  # expand: () → (())
+        return tree[:idx] + [1, 1, 0, 0] + tree[idx + 2:]  # expand: [1,0] → [1,[1,0],0]
 
 
-def mutate_tree_subtree(tree: str, rate: float) -> str:
-    """Replace a random non-root subtree with an empty leaf ()."""
+def mutate_tree_subtree(tree: List[int], rate: float) -> List[int]:
+    """Replace a random non-root subtree with an empty leaf [1,0]."""
     if not tree or random.random() > rate:
         return tree
     spans = _all_subtree_spans(tree)
     if not spans:
         return tree
     s, e = random.choice(spans)
-    return tree[:s] + '()' + tree[e:]
+    return tree[:s] + [1, 0] + tree[e:]
 
 
-def crossover_tree_depth1(tree_a: str, tree_b: str) -> str:
+def crossover_tree_depth1(tree_a: List[int], tree_b: List[int]) -> List[int]:
     """Swap one depth-1 child subtree from tree_b into tree_a."""
     spans_a = _subtrees_at_depth(tree_a, 1)
     spans_b = _subtrees_at_depth(tree_b, 1)
@@ -168,7 +168,7 @@ def crossover_tree_depth1(tree_a: str, tree_b: str) -> str:
     return tree_a[:sa[0]] + tree_b[sb[0]:sb[1]] + tree_a[sa[1]:]
 
 
-def crossover_tree_random_depth(tree_a: str, tree_b: str) -> str:
+def crossover_tree_random_depth(tree_a: List[int], tree_b: List[int]) -> List[int]:
     """Swap a subtree from tree_b at a randomly chosen shared depth into tree_a."""
     d_a = _tree_max_depth(tree_a)
     d_b = _tree_max_depth(tree_b)
@@ -192,16 +192,14 @@ def homoiconic_crossover(interp, cfg: ExperimentConfig, code_a, code_b) -> Optio
     Run interpreter(code_a, code_b) and treat the output as a new program.
 
     Every language in this framework is homoiconic: their output domain equals
-    their program domain (List[int] for subleq/iconfractran, balanced-paren
-    string for treemo). Returns None if the output is empty or structurally
-    invalid.
+    their program domain (List[int] for all interpreters). Returns None if the
+    output is empty or structurally invalid.
     """
     output, _ = interp.run(code_a, code_b)
     if not output:
         return None
     if cfg.interpreter == "treemo":
-        candidate = output if isinstance(output, str) else ''.join(output)
-        return candidate if _is_balanced(candidate) else None
+        return output if _is_balanced(output) else None
     return output  # List[int] is always a valid program
 
 

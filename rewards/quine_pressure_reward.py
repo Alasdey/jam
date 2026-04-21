@@ -2,7 +2,7 @@
 
 from typing import List, Union
 
-Program = Union[List[int], str]
+Program = List[int]
 
 
 def _lcs_length(a: List[int], b: List[int]) -> int:
@@ -36,11 +36,6 @@ def _similarity(output: Program, reference: Program) -> float:
     """
     if not output or not reference:
         return 0.0
-
-    # Treemo: operate on character lists
-    if isinstance(output, str):
-        output = list(output)
-        reference = list(reference)
 
     lcs = _lcs_length(output, reference)
     return lcs / len(reference)
