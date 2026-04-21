@@ -65,9 +65,10 @@ class GeneticsConfig:
 @dataclass
 class ExperimentConfig:
     ### Which interpreter / reward to use
-    # interpreter: str = "subleq"
-    interpreter: str = "iconfractran"
-    reward: str = "blind"
+    # subleq|iconfractran|treemo
+    interpreter: str = "treemo"
+    # blind|placeholder|quine_pressure
+    reward: str = "quine_pressure" 
 
     ### Sub-configs
     subleq: SubleqConfig = field(default_factory=SubleqConfig)
