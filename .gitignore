@@ -2,6 +2,7 @@
 test_bay.ipynb
 rewards/*
 !rewards/placeholder_reward.py
+!rewards/quine_pressure_reward.py
 !rewards/wrapper.py
 libsubleq.so
 outputs*
