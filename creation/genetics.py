@@ -1,15 +1,9 @@
 
 import random
-from typing import Any, Callable, Dict, List, NamedTuple, Optional
+from typing import Callable, Dict, List
 
-from config import ExperimentConfig
-
-
-# ── Type aliases ──────────────────────────────────────────────────────────────
-
-Program = Any  # List[int] for all interpreters
-MutateFn = Callable[[Program, float], Program]    # (prog, rate) -> prog
-CrossoverFn = Callable[[Program, Program], Program]
+MutateFn = Callable[[List[int], float], List[int]]
+CrossoverFn = Callable[[List[int], List[int]], List[int]]
 
 
 # ── Integer-program operators ─────────────────────────────────────────────────
@@ -185,24 +179,6 @@ def crossover_tree_random_depth(tree_a: List[int], tree_b: List[int]) -> List[in
     return tree_a
 
 
-# ── Homoiconic crossover ───────────────────────────────────────────────────────
-
-def homoiconic_crossover(interp, cfg: ExperimentConfig, code_a, code_b) -> Optional[Any]:
-    """
-    Run interpreter(code_a, code_b) and treat the output as a new program.
-
-    Every language in this framework is homoiconic: their output domain equals
-    their program domain (List[int] for all interpreters). Returns None if the
-    output is empty or structurally invalid.
-    """
-    output, _ = interp.run(code_a, code_b)
-    if not output:
-        return None
-    if cfg.interpreter == "treemo":
-        return output if _is_balanced(output) else None
-    return output  # List[int] is always a valid program
-
-
 # ── Operator registries ────────────────────────────────────────────────────────
 
 CODE_MUTATION_OPS: Dict[str, Callable] = {
@@ -226,70 +202,3 @@ TREE_CROSSOVER_OPS: Dict[str, CrossoverFn] = {
     "random_depth": crossover_tree_random_depth,
 }
 
-
-# ── Operator set ──────────────────────────────────────────────────────────────
-
-class OperatorSet(NamedTuple):
-    """Bundles mutation and crossover callables for a given interpreter type."""
-    mutate: MutateFn        # (program, rate: float) -> program
-    crossover: CrossoverFn  # (program_a, program_b) -> program
-
-
-def build_operator_set(cfg: ExperimentConfig) -> OperatorSet:
-    """Resolve operator names from cfg.genetics into bound callables."""
-    gc = cfg.genetics
-
-    def _lookup(registry: dict, key: str, label: str) -> Callable:
-        op = registry.get(key)
-        if op is None:
-            raise ValueError(f"Unknown {label}: {key!r}. Available: {sorted(registry)}")
-        return op
-
-    if cfg.interpreter == "treemo":
-        raw_mut = _lookup(TREE_MUTATION_OPS, gc.tree_mutation_op, "tree mutation op")
-        raw_xo  = _lookup(TREE_CROSSOVER_OPS, gc.tree_crossover_op, "tree crossover op")
-        return OperatorSet(mutate=raw_mut, crossover=raw_xo)
-    else:
-        raw_mut = _lookup(CODE_MUTATION_OPS, gc.code_mutation_op, "code mutation op")
-        raw_xo  = _lookup(CODE_CROSSOVER_OPS, gc.code_crossover_op, "code crossover op")
-        _cfg = cfg  # capture by value for lambda
-        return OperatorSet(
-            mutate=lambda code, rate, _m=raw_mut, _c=_cfg: _m(code, _c, rate),
-            crossover=raw_xo,
-        )
-
-
-# ── Unified offspring generation ───────────────────────────────────────────────
-
-def make_offspring(
-    cfg: ExperimentConfig,
-    survivors: list,
-    n_offspring: int,
-    ops: OperatorSet,
-    interp=None,
-) -> list:
-    """
-    Generate n_offspring from survivors using the provided OperatorSet.
-
-    Probabilities (crossover_prob, homoiconic_prob, mutation_rate) are read
-    from cfg.genetics. When interp is given, homoiconic_crossover is attempted
-    first for a fraction of crossover operations, falling back to ops.crossover
-    if the output is invalid.
-    """
-    if not survivors or n_offspring == 0:
-        return []
-    gc = cfg.genetics
-    offspring = []
-    for _ in range(n_offspring):
-        if random.random() < gc.crossover_prob and len(survivors) >= 2:
-            pa, pb = random.sample(survivors, 2)
-            child = None
-            if interp is not None and random.random() < gc.homoiconic_prob:
-                child = homoiconic_crossover(interp, cfg, pa, pb)
-            if child is None:
-                child = ops.crossover(pa, pb)
-        else:
-            parent = random.choice(survivors)
-            child = ops.mutate(parent, gc.mutation_rate)
-        offspring.append(child)
-    return offspring
