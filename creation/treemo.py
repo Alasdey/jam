@@ -1,8 +1,22 @@
+from random import randint
+
 from config import ExperimentConfig
 from creation.base import Creator, Program
-from interpreters.treemo_python.treemo_python import gen_tree
 from creation.genetics import TREE_MUTATION_OPS, TREE_CROSSOVER_OPS
 from creation.homoiconic import HOMOICONIC_OPS
+
+
+def gen_tree(n: int = 3) -> list[int]:
+    res = [1]
+    space = 0
+    dept = space
+    for _ in range(n - 1):
+        space = randint(1, space + 1)
+        res += [0] * (dept + 1 - space)
+        res += [1]
+        dept = space
+    res += [0] * (dept + 1)
+    return res
 
 
 class TreemoCreator(Creator):

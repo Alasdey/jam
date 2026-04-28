@@ -6,10 +6,8 @@ except ImportError as e:
     raise ImportError(
         "Rust extension 'treemo_rs' not found. "
         "Build it with:\n"
-        "  cd treemo_rs && VIRTUAL_ENV=../.venv maturin develop --release"
+        "  cd interpreters/treemo/treemo_rs && VIRTUAL_ENV=../../.venv maturin develop --release"
     ) from e
-
-from interpreters.treemo_python.treemo_python import gen_tree, tree_to_dot
 
 
 def treemo(code: List[int], inp: List[int], max_step: int = 5) -> List[int]:
