@@ -8,7 +8,7 @@ from typing import Optional
 from selection.nash_set import compute_nash_equilibrium, compute_nash_subset
 from selection.skim import iterated_elimination_strictly_dominated_rows, iterated_elimination_strictly_dominated_rows_fast
 from rewards.payoff import compute_payoff_matrix
-from utils.experiment_logger import ExperimentLogger
+from loggers import ExperimentLogger
 from creation.factory import make_creator
 from config import ExperimentConfig
 from rewards.wrapper import make_reward
@@ -77,8 +77,8 @@ def main(
         )
 
 if __name__ == "__main__":
-    n_skim = 2
-    n_pop = 10
+    n_skim = 1
+    n_pop = 100
     n_iter = 10**7
     n_accepted = 2000
     out_dir_path = "outputs/random_skimmed/" + time.strftime("%Y%m%d_%H%M%S")

@@ -1,6 +1,6 @@
 from config import ExperimentConfig
 from creation.base import Creator, Program
-from interpreters.treemo.treemo import gen_tree
+from interpreters.treemo_python.treemo_python import gen_tree
 from creation.genetics import TREE_MUTATION_OPS, TREE_CROSSOVER_OPS
 from creation.homoiconic import HOMOICONIC_OPS
 

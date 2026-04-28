@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List
 
 from config import RandomBaselineConfig
-from utils.experiment_logger import ExperimentLogger
+from loggers import ExperimentLogger
 from creation.factory import make_creator
 from rewards.payoff import compute_payoff_matrix
 from rewards.wrapper import make_reward

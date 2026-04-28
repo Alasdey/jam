@@ -1,6 +1,7 @@
 
 import time
 from dataclasses import dataclass, field
+from typing import Optional
 
 # --- Code generation config ---
 
@@ -38,7 +39,7 @@ class SubleqConfig:
 @dataclass
 class PayoffConfig:
     # 1 = sequential, >1 = use ProcessPoolExecutor
-    n_workers: int = 1
+    n_workers: int = 6
 
 
 # --- Genetics / operator config ---
@@ -91,4 +92,26 @@ class RandomBaselineConfig:
     n_grain: int = 500
     out_path: str = "outputs/random_baseline/" + time.strftime("%Y%m%d_%H%M%S")
     out_name: str = "results.json"
+    experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
+
+
+# --- Full evolutionary loop config ---
+
+@dataclass
+class EvolutionConfig:
+    # Initial population size
+    n_init: int = 50
+    # Offspring produced each generation
+    n_offspring: int = 20
+    # Number of generations
+    n_iter: int = 1000
+    # Selection method: "skim_fast" | "skim_slow" | "nash_subset" | "none"
+    selection: str = "skim_fast"
+    # Skim rounds applied per generation (only for skim_* methods)
+    n_skim: int = 1
+    # Hard cap on population size after selection (None = uncapped)
+    pop_cap: Optional[int] = 500
+    # Output directory
+    out_dir: str = "outputs/evolution/" + time.strftime("%Y%m%d_%H%M%S")
+    # Underlying experiment config (interpreter, reward, genetics, …)
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
