@@ -13,7 +13,7 @@ uv sync
 gcc -shared -fPIC -o interpreters/subleq/libsubleq.so interpreters/subleq/subleq.c
 ```
 
-### 3. Treemo Rust extension (optional but strongly recommended — ~200× faster)
+### 3. Treemo Rust extension
 
 Requires the Rust toolchain. Install it once with:
 ```bash
@@ -27,15 +27,6 @@ VIRTUAL_ENV=../../.venv maturin develop --release
 cd ../../..
 ```
 
-The interpreter auto-detects the extension at import time and falls back to pure
-Python if it is not present.
-
-To verify which backend is active:
-```python
-from interpreters.treemo.treemo import _RUST
-print("Rust backend:", _RUST)
-```
-
 ### 4. Run
 ```bash
 uv run python main.py
@@ -47,12 +38,13 @@ uv run python main.py
 |---|---|
 | `interpreters/treemo/treemo.py` | Entry point — delegates entirely to the Rust extension |
 | `interpreters/treemo/treemo_rs/` | Rust crate (PyO3 + memchr Two-Way SIMD search) |
-| `interpreters/treemo_python/treemo_python.py` | Pure-Python reference implementation |
 
 ## Todo's
-Make a wrapper for the interpreters to allow for more UISC or RISC languages (be it marginal improvements). \
-Make a wrapper for the rewards \
-Build a logging system \
-Improve the payoff computation \
-Import the Nash set computation \
-Import the Genetic Programming
+Make a wrapper for the interpreters to allow for more UISC or RISC languages (be it marginal improvements). **(Done)**\
+Make a wrapper for the rewards **(Done)**\
+Build a logging system **(Done)**\
+Improve the payoff computation **(Done)**\
+Import the Nash set computation **(Done)**\
+Import the Genetic Programming **(Done)**\
+The subleq is broken in some way because the rewards with it make matrix that make no sens. \
+Unit testing or the like to check sanity of the code (interpreters, reward, selection ect) \
