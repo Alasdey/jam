@@ -67,9 +67,9 @@ class GeneticsConfig:
 class ExperimentConfig:
     ### Which interpreter / reward to use
     # subleq|iconfractran|treemo
-    interpreter: str = "treemo"
+    interpreter: str = "subleq"
     # blind|placeholder|quine_pressure
-    reward: str = "quine_pressure" 
+    reward: str = "placeholder" 
 
     ### Sub-configs
     subleq: SubleqConfig = field(default_factory=SubleqConfig)
@@ -95,6 +95,18 @@ class RandomBaselineConfig:
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 
 
+# --- Random skimmed experiment config ---
+
+@dataclass
+class RandomSkimmedConfig:
+    n_pop: int = 100
+    n_iter: int = 10**7
+    n_skim: int = 20
+    n_accepted: Optional[int] = 2_000
+    out_dir: str = "outputs/random_skimmed/" + time.strftime("%Y%m%d_%H%M%S")
+    experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
+
+
 # --- Full evolutionary loop config ---
 
 @dataclass
@@ -108,7 +120,7 @@ class EvolutionConfig:
     # Selection method: "skim_fast" | "skim_slow" | "nash_subset" | "none"
     selection: str = "skim_fast"
     # Skim rounds applied per generation (only for skim_* methods)
-    n_skim: int = 1
+    n_skim: int = 2
     # Hard cap on population size after selection (None = uncapped)
     pop_cap: Optional[int] = 500
     # Output directory
