@@ -120,11 +120,11 @@ def iterated_elimination_strictly_dominated_rows_fast(
             break  # nothing left to dominate
 
         # Submatrix of active rows: shape (k, n_cols)
-        M = A[active]  # view/copy depending on strides, but cheap enough
+        M = A[np.ix_(active, active)]  # only active rows AND columns (symmetric IESDS)
 
         # Compare all row pairs via broadcasting:
-        # M[:, None, :] shape (k,1,n_cols)
-        # M[None, :, :] shape (1,k,n_cols)
+        # M[:, None, :] shape (k,1,k)
+        # M[None, :, :] shape (1,k,k)
         # ge[j, i] = True iff row j >= row i componentwise (within atol)
         ge = M[:, None, :] >= (M[None, :, :] - atol)
 
