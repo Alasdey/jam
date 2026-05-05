@@ -36,8 +36,8 @@ uv run python main.py
 
 | File | Role |
 |---|---|
-| `interpreters/treemo/treemo.py` | Entry point — delegates entirely to the Rust extension |
-| `interpreters/treemo/treemo_rs/` | Rust crate (PyO3 + memchr Two-Way SIMD search) |
+| `interpreters/treemo/treemo.py` | Thin wrapper around the Rust extension |
+| `interpreters/treemo/treemo_rs/` | Rust crate (PyO3 + memchr) |
 
 ## Todo's
 Make a wrapper for the interpreters to allow for more UISC or RISC languages (be it marginal improvements). **(Done)**\
