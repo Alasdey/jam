@@ -104,6 +104,7 @@ class RandomSkimmedConfig:
     n_skim: int = 3
     skim_fraction: float = 0.9  # fraction of dominated individuals removed per skim (0 = keep all, 1 = remove all)
     n_accepted: Optional[int] = 2_000
+    max_pop: Optional[int] = None  # if set, randomly downsample to this size after each generation
     out_dir: str = "outputs/random_skimmed/" + time.strftime("%Y%m%d_%H%M%S")
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 

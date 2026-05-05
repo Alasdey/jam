@@ -49,6 +49,11 @@ def main(cfg: RandomSkimmedConfig):
             n_old = n_old - n_removed
             if cfg.n_accepted and len(pop) < cfg.n_accepted:
                 break
+        if cfg.max_pop and len(pop) > cfg.max_pop:
+            keep = np.sort(np.random.choice(len(pop), size=cfg.max_pop, replace=False))
+            pop = [pop[i] for i in keep]
+            payoff = payoff[keep, :][:, keep]
+            n_old = int((keep < n_old).sum())
         t2 = time.time()
         n_removed_total = n_prev - n_old
         n_survived_new = len(pop) - n_old
