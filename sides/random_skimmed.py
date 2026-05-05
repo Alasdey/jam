@@ -37,6 +37,11 @@ def main(cfg: RandomSkimmedConfig):
         n_prev = n_old
         for _ in range(cfg.n_skim):
             skimmed = iterated_elimination_strictly_dominated_rows_fast(payoff)
+            if cfg.skim_fraction < 1.0:
+                dominated = np.setdiff1d(np.arange(len(pop)), skimmed)
+                n_keep = int(len(dominated) * (1 - cfg.skim_fraction))
+                kept = np.random.choice(dominated, size=n_keep, replace=False)
+                skimmed = np.sort(np.concatenate([skimmed, kept]))
             n_removed = n_old - int((skimmed < n_old).sum())
             n_new = int((skimmed >= n_old).sum())
             pop = [pop[i] for i in skimmed.tolist()]

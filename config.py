@@ -69,7 +69,7 @@ class ExperimentConfig:
     # subleq|iconfractran|treemo
     interpreter: str = "subleq"
     # blind|placeholder|quine_pressure
-    reward: str = "placeholder" 
+    reward: str = "quine_pressure" 
 
     ### Sub-configs
     subleq: SubleqConfig = field(default_factory=SubleqConfig)
@@ -79,8 +79,8 @@ class ExperimentConfig:
     payoff: PayoffConfig = field(default_factory=PayoffConfig)
     genetics: GeneticsConfig = field(default_factory=GeneticsConfig)
 
-    # code: CodeConfig = field(default_factory=CodeConfig)
-    code: RuleConfig = field(default_factory=RuleConfig)
+    code: CodeConfig = field(default_factory=CodeConfig)
+    # code: RuleConfig = field(default_factory=RuleConfig)
 
 
 # --- Random baseline experiment config ---
@@ -101,7 +101,8 @@ class RandomBaselineConfig:
 class RandomSkimmedConfig:
     n_pop: int = 100
     n_iter: int = 10**7
-    n_skim: int = 20
+    n_skim: int = 3
+    skim_fraction: float = 0.9  # fraction of dominated individuals removed per skim (0 = keep all, 1 = remove all)
     n_accepted: Optional[int] = 2_000
     out_dir: str = "outputs/random_skimmed/" + time.strftime("%Y%m%d_%H%M%S")
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
