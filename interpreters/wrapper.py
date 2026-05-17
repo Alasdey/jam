@@ -3,7 +3,8 @@
 from config import ExperimentConfig, SubleqConfig, IconfractranConfig, TreemoConfig
 from interpreters.subleq.subleq import SubleqInterpreter
 from interpreters.iconfractran.iconfractran import IconfractranInterpreter
-from interpreters.treemo.treemo import TreemoInterpreter
+from interpreters.treemo_c.treemo import TreemoInterpreter as TreemoCInterpreter
+from interpreters.treemo_py.treemo import TreemoInterpreter as TreemoPyInterpreter
 
 
 def make_subleq_interpreter(cfg: SubleqConfig) -> SubleqInterpreter:
@@ -22,11 +23,11 @@ def make_iconfractran_interpreter(cfg: IconfractranConfig):
     """
     return IconfractranInterpreter(max_step=cfg.max_step)
 
-def make_treemo_interpreter(cfg: TreemoConfig) -> TreemoInterpreter:
-    """
-    Build a TreemoInterpreter from its specific config.
-    """
-    return TreemoInterpreter(max_step=cfg.max_step)
+def make_treemo_interpreter(cfg: TreemoConfig) -> TreemoCInterpreter:
+    return TreemoCInterpreter(max_step=cfg.max_step)
+
+def make_treemo_py_interpreter(cfg: TreemoConfig) -> TreemoPyInterpreter:
+    return TreemoPyInterpreter(max_step=cfg.max_step)
 
 def make_interpreter(cfg: ExperimentConfig):
     """
@@ -39,5 +40,6 @@ def make_interpreter(cfg: ExperimentConfig):
         return make_iconfractran_interpreter(cfg.iconfractran)
     if cfg.interpreter == "treemo":
         return make_treemo_interpreter(cfg.treemo)
-
-    raise ValueError(f"Unknown interpreter: {cfg.interpreter}")
+    if cfg.interpreter == "treemo_py":
+        return make_treemo_py_interpreter(cfg.treemo)
+    raise ValueError(f"Unknown interpreter: {cfg.interpreter!r}")

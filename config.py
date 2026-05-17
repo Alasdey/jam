@@ -39,7 +39,7 @@ class SubleqConfig:
 @dataclass
 class PayoffConfig:
     # 1 = sequential, >1 = use ProcessPoolExecutor
-    n_workers: int = 6
+    n_workers: int = 1
 
 
 # --- Genetics / operator config ---
@@ -66,8 +66,8 @@ class GeneticsConfig:
 @dataclass
 class ExperimentConfig:
     ### Which interpreter / reward to use
-    # subleq|iconfractran|treemo
-    interpreter: str = "subleq"
+    # subleq | iconfractran | treemo | treemo_py
+    interpreter: str = "treemo"
     # blind|placeholder|quine_pressure
     reward: str = "quine_pressure" 
 
@@ -100,11 +100,13 @@ class RandomBaselineConfig:
 @dataclass
 class RandomSkimmedConfig:
     n_pop: int = 100
-    n_iter: int = 10**7
+    n_iter: int = 10**4
     n_skim: int = 3
-    skim_fraction: float = 0.9  # fraction of dominated individuals removed per skim (0 = keep all, 1 = remove all)
+    # fraction of dominated individuals removed per skim (0 = keep all, 1 = remove all)
+    skim_fraction: float = 1
     n_accepted: Optional[int] = 2_000
-    max_pop: Optional[int] = None  # if set, randomly downsample to this size after each generation
+    # if set, randomly downsample to this size after each generation
+    max_pop: Optional[int] = 2_000  
     out_dir: str = "outputs/random_skimmed/" + time.strftime("%Y%m%d_%H%M%S")
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 
