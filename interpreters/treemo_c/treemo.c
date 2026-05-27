@@ -1,9 +1,19 @@
 /* treemo.c — tree rewriting interpreter
  * Build:  cc -O3 -o treemo treemo.c
- * Usage:  ./treemo <program_bits> <input_bits> [max_step]
+ * Usage:  ./treemo <program_bits> <input_bits> [max_step] [pass_mode] [first_mode]
  *
  * Program and input are strings of '0'/'1' characters (Dyck words).
- * Max_step defaults to 50.
+ * Max_step  defaults to 50.
+ * pass_mode defaults to 1 (fire at most once before advancing).
+ * first_mode defaults to 0 (advance to next rule in sequence).
+ *
+ * Rule advancement semantics:
+ *   pass_mode=1  a rule fires at most once before the interpreter moves on.
+ *   pass_mode=0  a rule fires until it no longer matches before moving on.
+ *   first_mode=1 after a rule fires and the interpreter advances, restart
+ *                from rule 0.
+ *   first_mode=0 after a rule fires and the interpreter advances, continue
+ *                to the next rule in sequence.
  */
 
 #include <stdio.h>
@@ -127,55 +137,93 @@ static Rule *extract(const unsigned char *code, int clen, int *nout) {
 /* ── Interpreter ────────────────────────────────────────────────────── */
 
 /*
- * dirty[i] = earliest position in the current state where rule i
- * could possibly match. Everything before dirty[i] has been verified
- * to contain no match for rule i.
+ * dirty[i] = earliest position in the current state where rule i could
+ * possibly match. Everything before dirty[i] has been verified match-free
+ * for rule i since the last modification of the tape in that region.
  *
  * After firing rule i at position pos:
- *   dirty[j] = max(0, pos + 1 - plen_j)  for all j
+ *   - Rule i itself was just scanned; its dirty advances to
+ *     max(0, pos+1-plen_i).
+ *   - In restart mode (pass_mode=1, first_mode=1) rules 0..i-1 were also
+ *     scanned clean this pass and can be advanced similarly.
+ *   - All other rules: dirty[j] = min(dirty[j], max(0, pos+1-plen_j))
+ *     (only pull back if the replacement overlaps the pattern window).
  *
- * This is correct because:
- *  - rules 0..i-1 were fully scanned (no match found) before the
- *    replacement; positions before max(0,pos+1-plen_j) are unchanged
- *    and still match-free.
- *  - rules i..n-1 may have new matches only where the replacement
- *    overlaps with the pattern window, i.e. starting at pos+1-plen_j.
+ * Halt condition: no_fire_streak >= nr
+ *   no_fire_streak counts consecutive rules visited without any firing.
+ *   It resets to 0 whenever any rule fires. When it reaches nr all rules
+ *   have been tried without effect → fixed point, halt.
  */
 static Buf run(Rule *rules, int nr,
-               const unsigned char *inp, int ilen, int maxstep) {
+               const unsigned char *inp, int ilen, int maxstep,
+               int pass_mode, int first_mode) {
     Buf st = {0};
     bgrow(&st, ilen > 64 ? ilen * 2 : 128);
     memcpy(st.d, inp, ilen);
     st.len = ilen;
 
-    int *dirty = calloc(nr, sizeof *dirty);
+    if (nr == 0) goto done;
 
-    for (int step = 0; step < maxstep; step++) {
-        int fired = 0;
-        for (int i = 0; i < nr; i++) {
-            Rule *r = &rules[i];
-            int pos = kfind(st.d, st.len, r->pat, r->plen, r->kmp, dirty[i]);
-            if (pos < 0) { dirty[i] = st.len; continue; }
-            if (r->ident) goto done;
+    int *dirty = calloc(nr, sizeof *dirty);
+    int i = 0;
+    int no_fire_streak = 0;
+    int current_rule_fired = 0;
+
+    for (int step = 0; step < maxstep; ) {
+        Rule *r = &rules[i];
+        int pos = kfind(st.d, st.len, r->pat, r->plen, r->kmp, dirty[i]);
+
+        if (pos >= 0) {
+            if (r->ident) { free(dirty); goto done; }
 
             breplace(&st, pos, r->plen, r->rep, r->rlen);
+            step++;
+            no_fire_streak = 0;
+            current_rule_fired = 1;
 
+            /* Update dirty[].
+             *
+             * Rule i was just scanned → always advance its dirty.
+             * In restart mode (pass_mode && first_mode) rules 0..i-1 were
+             * all scanned clean this pass → also advance them.
+             * Every other rule: only pull back (conservative but correct). */
             for (int j = 0; j < nr; j++) {
                 int d = pos + 1 - rules[j].plen;
                 if (d < 0) d = 0;
-                if (j <= i)
-                    dirty[j] = d;          /* scanned this step: advance to dirty zone */
-                else if (d < dirty[j])
-                    dirty[j] = d;          /* not scanned: only pull back if needed    */
+                int can_advance = (j == i) ||
+                                  (pass_mode && first_mode && j < i);
+                if (can_advance || d < dirty[j])
+                    dirty[j] = d;
             }
-            fired = 1;
-            break;
+
+            if (pass_mode) {
+                /* Advance after exactly one firing. */
+                if (first_mode) i = 0;
+                else            i = (i + 1) % nr;
+                current_rule_fired = 0;
+            }
+            /* else: stay on rule i (exhaust mode) */
+
+        } else {
+            /* No match for rule i. */
+            dirty[i] = st.len;   /* mark as fully scanned */
+
+            if (!current_rule_fired) {
+                /* Rule never fired since last advance → count toward halt. */
+                if (++no_fire_streak >= nr) break;
+                i = (i + 1) % nr;
+            } else {
+                /* pass_mode=0: rule was exhausted after firing at least once. */
+                no_fire_streak = 0;
+                current_rule_fired = 0;
+                if (first_mode) i = 0;
+                else            i = (i + 1) % nr;
+            }
         }
-        if (!fired) break;
     }
 
-done:
     free(dirty);
+done:
     return st;
 }
 
@@ -190,11 +238,18 @@ Prog *treemo_compile(const unsigned char *prog, int plen) {
 }
 
 /* Returns malloc'd result buffer; caller frees with treemo_free_buf.
- * *out_len is set to the number of bytes written. */
+ * *out_len is set to the number of bytes written.
+ *
+ * pass_mode : 1 = fire at most once before advancing (default)
+ *             0 = fire until no match before advancing
+ * first_mode: 0 = advance to next rule in sequence (default)
+ *             1 = restart from rule 0 after advancing
+ */
 unsigned char *treemo_exec(const Prog *p,
                            const unsigned char *inp, int ilen,
-                           int max_step, int *out_len) {
-    Buf b = run(p->rules, p->nrules, inp, ilen, max_step);
+                           int max_step, int pass_mode, int first_mode,
+                           int *out_len) {
+    Buf b = run(p->rules, p->nrules, inp, ilen, max_step, pass_mode, first_mode);
     *out_len = b.len;
     return b.d;
 }
@@ -226,17 +281,23 @@ static int parse(const char *s, unsigned char **out) {
 
 int main(int argc, char **argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: treemo <program> <input> [max_step]\n");
+        fprintf(stderr,
+            "usage: treemo <program> <input> [max_step] [pass_mode] [first_mode]\n"
+            "  pass_mode : 1=single-fire (default), 0=exhaust\n"
+            "  first_mode: 0=continue-next (default), 1=restart-from-0\n");
         return 1;
     }
     unsigned char *code, *inp;
     int clen = parse(argv[1], &code);
     int ilen = parse(argv[2], &inp);
-    int maxstep = argc >= 4 ? atoi(argv[3]) : 50;
+    int maxstep   = argc >= 4 ? atoi(argv[3]) : 50;
+    int pass_mode  = argc >= 5 ? atoi(argv[4]) : 1;
+    int first_mode = argc >= 6 ? atoi(argv[5]) : 0;
 
     Prog *p = treemo_compile(code, clen);
     int rlen;
-    unsigned char *result = treemo_exec(p, inp, ilen, maxstep, &rlen);
+    unsigned char *result = treemo_exec(p, inp, ilen, maxstep,
+                                        pass_mode, first_mode, &rlen);
 
     for (int i = 0; i < rlen; i++) putchar('0' + result[i]);
     putchar('\n');

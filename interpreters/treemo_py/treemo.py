@@ -63,21 +63,69 @@ def _list_find(haystack: List[int], needle: List[int]) -> int:
     return -1
 
 
-def interpret(rules: List[tuple], inp: List[int], max_step: int=5) -> List[int]:
+def interpret(rules: List[tuple], inp: List[int], max_step: int = 5,
+              pass_mode: bool = True, first_mode: bool = False) -> List[int]:
+    """
+    Execute Treemo rules on inp for at most max_step firings.
+
+    pass_mode : True  → a rule fires at most once before advancing to another
+                False → a rule fires until it no longer matches before advancing
+    first_mode: True  → after a rule fires and the interpreter advances, restart
+                        from rule 0
+                False → after a rule fires and the interpreter advances, continue
+                        to the next rule in sequence
+    """
     res = list(inp)
-    something_happened = True
+    n = len(rules)
+    if n == 0:
+        return res
+
+    i = 0
+    no_fire_streak = 0   # consecutive rules visited with zero firings
+    current_rule_fired = False  # did rule i fire at least once? (matters for pass_mode=False)
     step = 0
-    while something_happened and step < max_step:
-        step += 1
-        something_happened = False
-        for rule in rules:
-            idx = _list_find(res, rule[0])
-            if idx != -1:
-                if rule[0] == rule[1]:
-                    return res
-                res = res[:idx] + list(rule[1]) + res[idx + len(rule[0]):]
-                something_happened = True
-                break
+
+    while step < max_step:
+        pat = list(rules[i][0])
+        rep = list(rules[i][1])
+        idx = _list_find(res, pat)
+
+        if idx != -1:
+            if pat == rep:          # identity rule → halt
+                return res
+            # Fire
+            res = res[:idx] + rep + res[idx + len(pat):]
+            step += 1
+            no_fire_streak = 0
+            current_rule_fired = True
+
+            if pass_mode:
+                # Advance after exactly one firing
+                if first_mode:
+                    i = 0
+                else:
+                    i = (i + 1) % n
+                current_rule_fired = False
+
+            # else: stay on rule i (exhaust mode)
+
+        else:
+            # No match for rule i
+            if not current_rule_fired:
+                # Rule never fired since last advance → count toward halt
+                no_fire_streak += 1
+                if no_fire_streak >= n:
+                    break
+                i = (i + 1) % n
+            else:
+                # pass_mode=False: rule was exhausted after firing at least once
+                no_fire_streak = 0
+                current_rule_fired = False
+                if first_mode:
+                    i = 0
+                else:
+                    i = (i + 1) % n
+
     return res
 
 
@@ -102,15 +150,20 @@ def tree_to_dot(code: List[int]) -> str:
     return dot
 
 
-def treemo(code: List[int], inp: List[int], max_step: int = 5) -> List[int]:
+def treemo(code: List[int], inp: List[int], max_step: int = 5,
+           pass_mode: bool = True, first_mode: bool = False) -> List[int]:
     rules = tree_to_rules(code)
-    res = interpret(rules, inp, max_step)
-    return res
+    return interpret(rules, inp, max_step, pass_mode, first_mode)
 
 
 class TreemoInterpreter:
-    def __init__(self, max_step: int = 50):
+    def __init__(self, max_step: int = 50,
+                 pass_mode: bool = True, first_mode: bool = False):
         self.max_step = max_step
+        self.pass_mode = pass_mode
+        self.first_mode = first_mode
+
     def run(self, code: List[int], inp: List[int]) -> Tuple[List[int], List[int]]:
-        result = treemo(code, inp, max_step=self.max_step)
+        result = treemo(code, inp, max_step=self.max_step,
+                        pass_mode=self.pass_mode, first_mode=self.first_mode)
         return result, code

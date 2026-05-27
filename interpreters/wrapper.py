@@ -24,10 +24,14 @@ def make_iconfractran_interpreter(cfg: IconfractranConfig):
     return IconfractranInterpreter(max_step=cfg.max_step)
 
 def make_treemo_interpreter(cfg: TreemoConfig) -> TreemoCInterpreter:
-    return TreemoCInterpreter(max_step=cfg.max_step)
+    return TreemoCInterpreter(max_step=cfg.max_step,
+                              pass_mode=cfg.pass_mode,
+                              first_mode=cfg.first_mode)
 
 def make_treemo_py_interpreter(cfg: TreemoConfig) -> TreemoPyInterpreter:
-    return TreemoPyInterpreter(max_step=cfg.max_step)
+    return TreemoPyInterpreter(max_step=cfg.max_step,
+                               pass_mode=cfg.pass_mode,
+                               first_mode=cfg.first_mode)
 
 def make_interpreter(cfg: ExperimentConfig):
     """

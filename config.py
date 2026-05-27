@@ -27,6 +27,14 @@ class IconfractranConfig:
 class TreemoConfig:
     max_step: int = 50
     tree_size: int = 100
+    # Rule advancement strategy:
+    #   pass_mode=True  → a rule fires at most once before the interpreter moves on
+    #   pass_mode=False → a rule fires until it no longer matches before moving on
+    pass_mode: bool = True
+    # Where to move after a rule fires and the interpreter advances:
+    #   first_mode=True  → restart from rule 0
+    #   first_mode=False → continue to the next rule in sequence
+    first_mode: bool = False
 
 @dataclass
 class SubleqConfig:
