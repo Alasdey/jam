@@ -61,7 +61,7 @@ class GeneticsConfig:
     # Integer-program operator selection ("uniform" | "creep")
     code_mutation_op: str = "uniform"
     # ("single_point" | "two_point" | "uniform")
-    code_crossover_op: str = "single_point"
+    code_crossover_op: str = "two_point"
 
     # Tree operator selection ("leaf" | "subtree")
     tree_mutation_op: str = "subtree"
@@ -116,6 +116,23 @@ class RandomSkimmedConfig:
     # if set, randomly downsample to this size after each generation
     max_pop: Optional[int] = 2_000  
     out_dir: str = "outputs/random_skimmed/" + time.strftime("%Y%m%d_%H%M%S")
+    experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
+
+
+# --- Main entry point config ---
+
+@dataclass
+class MainConfig:
+    n_random: int = 10**2     # fresh random individuals injected per generation
+    n_offspring: int = 10**2  # genetic offspring (mutate/crossover/homoiconic) per generation
+    n_iter: int = 10**4
+    n_skim: int = 3
+    # fraction of dominated individuals removed per skim (0 = keep all, 1 = remove all)
+    skim_fraction: float = 1
+    n_accepted: Optional[int] = 2_000
+    # if set, randomly downsample to this size after each generation
+    max_pop: Optional[int] = 2_000
+    out_dir: str = "outputs/main/" + time.strftime("%Y%m%d_%H%M%S")
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 
 
