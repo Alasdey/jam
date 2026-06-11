@@ -11,6 +11,7 @@ uv sync
 ### 2. Subleq C library
 ```bash
 gcc -shared -fPIC -o interpreters/subleq/libsubleq.so interpreters/subleq/subleq.c
+gcc -shared -fPIC -o interpreters/treemo_c/libtreemo.so interpreters/treemo_c/treemo.c
 ```
 
 ### 3. Treemo Rust extension
