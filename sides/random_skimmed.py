@@ -33,6 +33,7 @@ def main(cfg: RandomSkimmedConfig):
             temp = np.append(-payoff_old_new.T, payoff_new_new, axis=1)
             payoff = np.append(payoff, temp, axis=0)
 
+        payout = payoff.copy()
         t1 = time.time()
         n_prev = n_old
         for _ in range(cfg.n_skim):
@@ -58,6 +59,8 @@ def main(cfg: RandomSkimmedConfig):
         n_removed_total = n_prev - n_old
         n_survived_new = len(pop) - n_old
         print(f"Removed {n_removed_total}, New {n_survived_new}, took {t1 - t0:.2f}s payoff, {t2 - t1:.2f}s skim")
+        payoff_flat = payoff.sum(1)
+        payout_flat = payout.sum(1)
         logger.log(
             {
                 "gen": i,
@@ -68,10 +71,14 @@ def main(cfg: RandomSkimmedConfig):
                 "n_added": cfg.n_pop,
                 "n_removed": n_removed_total,
                 "n_survived_new": n_survived_new,
-                "payoff_mean": round(float(payoff.mean()), 4),
-                "payoff_std": round(float(payoff.std()), 4),
-                "payoff_min": int(payoff.min()),
-                "payoff_max": int(payoff.max()),
+                "payoff_mean": round(float(payoff_flat.mean()), 4),
+                "payoff_std": round(float(payoff_flat.std()), 4),
+                "payoff_min": int(payoff_flat.min()),
+                "payoff_max": int(payoff_flat.max()),
+                "payout_mean": round(float(payout_flat.mean()), 4),
+                "payout_std": round(float(payout_flat.std()), 4),
+                "payout_min": int(payout_flat.min()),
+                "payout_max": int(payout_flat.max()),
             },
             work_pop=pop,
         )
