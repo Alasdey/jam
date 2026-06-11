@@ -1,6 +1,6 @@
 from typing import List
 
-def graphviz_translate(tree: List[int]):
+def viz(tree: List[int]):
     """
     Transform a tree into a string.
     That string is an input for graphviz for that tree.

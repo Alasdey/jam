@@ -30,7 +30,7 @@ class TreemoConfig:
     # Rule advancement strategy:
     #   pass_mode=True  → a rule fires at most once before the interpreter moves on
     #   pass_mode=False → a rule fires until it no longer matches before moving on
-    pass_mode: bool = True
+    pass_mode: bool = False # True makes any ouput and inert input
     # Where to move after a rule fires and the interpreter advances:
     #   first_mode=True  → restart from rule 0
     #   first_mode=False → continue to the next rule in sequence
@@ -64,9 +64,9 @@ class GeneticsConfig:
     code_crossover_op: str = "single_point"
 
     # Tree operator selection ("leaf" | "subtree")
-    tree_mutation_op: str = "leaf"
+    tree_mutation_op: str = "subtree"
     # ("depth1" | "random_depth")
-    tree_crossover_op: str = "depth1"
+    tree_crossover_op: str = "random_depth"
 
 
 # --- Experiment config ---
@@ -77,7 +77,7 @@ class ExperimentConfig:
     # subleq | iconfractran | treemo | treemo_py
     interpreter: str = "treemo"
     # blind|placeholder|quine_pressure
-    reward: str = "quine_pressure" 
+    reward: str = "blind" 
 
     ### Sub-configs
     subleq: SubleqConfig = field(default_factory=SubleqConfig)
@@ -107,7 +107,7 @@ class RandomBaselineConfig:
 
 @dataclass
 class RandomSkimmedConfig:
-    n_pop: int = 100
+    n_pop: int = 10**3
     n_iter: int = 10**4
     n_skim: int = 3
     # fraction of dominated individuals removed per skim (0 = keep all, 1 = remove all)
