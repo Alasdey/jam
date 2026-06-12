@@ -131,7 +131,7 @@ class MainConfig:
     skim_fraction: float = 1
     n_accepted: Optional[int] = 2_000
     # if set, randomly downsample to this size after each generation
-    max_pop: Optional[int] = 2_000
+    max_pop: Optional[int] = 1_000
     out_dir: str = "outputs/main/" + time.strftime("%Y%m%d_%H%M%S")
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 

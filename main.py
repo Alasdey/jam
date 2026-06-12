@@ -1,3 +1,4 @@
+from collections import Counter
 from pathlib import Path
 import numpy as np
 import time
@@ -22,17 +23,24 @@ def main(cfg: MainConfig):
     for i in range(cfg.n_iter):
         n_old = len(pop)
         new_individuals = [creator.random() for _ in range(cfg.n_random)]
+        new_individuals_methods = ["random"] * len(new_individuals)
         if n_old > 0:
-            new_individuals += make_offspring(
+            offspring, offspring_methods = make_offspring(
                 creator=creator,
                 survivors=pop,
                 n_offspring=cfg.n_offspring,
                 gc=cfg.experiment.genetics,
                 interp=interp,
             )
+            new_individuals += offspring
+            new_individuals_methods += offspring_methods
         else:
             # Bootstrap: nothing to mutate/crossover from yet
-            new_individuals += [creator.random() for _ in range(cfg.n_offspring)]
+            bootstrap = [creator.random() for _ in range(cfg.n_offspring)]
+            new_individuals += bootstrap
+            new_individuals_methods += ["random"] * len(bootstrap)
+        method_counts = Counter(new_individuals_methods)
+        pop_methods = [None] * n_old + new_individuals_methods
         pop += new_individuals
         print(f"Starting gen {i}, with population {len(pop)}")
         t0 = time.time()
@@ -58,6 +66,7 @@ def main(cfg: MainConfig):
             n_removed = n_old - int((skimmed < n_old).sum())
             n_new = int((skimmed >= n_old).sum())
             pop = [pop[i] for i in skimmed.tolist()]
+            pop_methods = [pop_methods[i] for i in skimmed.tolist()]
             payoff = payoff[skimmed, :][:, skimmed]
             n_old = n_old - n_removed
             if cfg.n_accepted and len(pop) < cfg.n_accepted:
@@ -68,12 +77,15 @@ def main(cfg: MainConfig):
             scores = payoff.sum(1)
             keep = np.sort(np.argsort(scores)[-cfg.max_pop:])
             pop = [pop[i] for i in keep]
+            pop_methods = [pop_methods[i] for i in keep]
             payoff = payoff[keep, :][:, keep]
             n_old = int((keep < n_old).sum())
         t2 = time.time()
         n_removed_total = n_prev - n_old
         n_survived_new = len(pop) - n_old
-        print(f"Removed {n_removed_total} ({n_capped} via max_pop cap), New {n_survived_new}, took {t1 - t0:.2f}s payoff, {t2 - t1:.2f}s skim")
+        survived_counts = Counter(pop_methods[n_old:])
+        survived_by_method = ", ".join(f"{k}={v}" for k, v in sorted(survived_counts.items()))
+        print(f"Removed {n_removed_total} ({n_capped} via max_pop cap), New {n_survived_new} [{survived_by_method}], took {t1 - t0:.2f}s payoff, {t2 - t1:.2f}s skim")
         payoff_flat = payoff.sum(1)
         payout_flat = payout.sum(1)
         logger.log(
@@ -84,9 +96,11 @@ def main(cfg: MainConfig):
                 "skim_s": round(t2 - t1, 4),
                 "pop_size": len(pop),
                 "n_added": len(new_individuals),
+                "n_added_by_method": dict(method_counts),
                 "n_removed": n_removed_total,
                 "n_capped": n_capped,
                 "n_survived_new": n_survived_new,
+                "n_survived_new_by_method": dict(survived_counts),
                 "payoff_mean": round(float(payoff_flat.mean()), 4),
                 "payoff_std": round(float(payoff_flat.std()), 4),
                 "payoff_min": int(payoff_flat.min()),
