@@ -62,15 +62,18 @@ def main(cfg: MainConfig):
             n_old = n_old - n_removed
             if cfg.n_accepted and len(pop) < cfg.n_accepted:
                 break
+        n_capped = 0
         if cfg.max_pop and len(pop) > cfg.max_pop:
-            keep = np.sort(np.random.choice(len(pop), size=cfg.max_pop, replace=False))
+            n_capped = len(pop) - cfg.max_pop
+            scores = payoff.sum(1)
+            keep = np.sort(np.argsort(scores)[-cfg.max_pop:])
             pop = [pop[i] for i in keep]
             payoff = payoff[keep, :][:, keep]
             n_old = int((keep < n_old).sum())
         t2 = time.time()
         n_removed_total = n_prev - n_old
         n_survived_new = len(pop) - n_old
-        print(f"Removed {n_removed_total}, New {n_survived_new}, took {t1 - t0:.2f}s payoff, {t2 - t1:.2f}s skim")
+        print(f"Removed {n_removed_total} ({n_capped} via max_pop cap), New {n_survived_new}, took {t1 - t0:.2f}s payoff, {t2 - t1:.2f}s skim")
         payoff_flat = payoff.sum(1)
         payout_flat = payout.sum(1)
         logger.log(
@@ -82,6 +85,7 @@ def main(cfg: MainConfig):
                 "pop_size": len(pop),
                 "n_added": len(new_individuals),
                 "n_removed": n_removed_total,
+                "n_capped": n_capped,
                 "n_survived_new": n_survived_new,
                 "payoff_mean": round(float(payoff_flat.mean()), 4),
                 "payoff_std": round(float(payoff_flat.std()), 4),
