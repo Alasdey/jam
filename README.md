@@ -115,6 +115,11 @@ All entrypoints write to `outputs/<name>/<timestamp>/` via `ExperimentLogger`
 `analysis/tree_viz.py` turns a Treemo tree (Dyck word of 0/1) into a graphviz
 `digraph` string for visualization.
 
+Also in the outputs logs this could help:
+```regex
+(.*"pop_size": 1000,.*\n)*.*"pop_size": 1,.*"random": 1\}
+```
+
 ## Todo's
 
 - Unit testing / sanity checks for interpreters, rewards, and selection are

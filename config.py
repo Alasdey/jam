@@ -132,6 +132,10 @@ class MainConfig:
     n_accepted: Optional[int] = 2_000
     # if set, randomly downsample to this size after each generation
     max_pop: Optional[int] = 1_000
+    # when to skim relative to the max_pop cap: "before" | "after" | "both"
+    skim_when: str = "before"
+    # path to a previous run's output dir (e.g. outputs/main/20260101_120000) to resume its population from
+    resume_from: Optional[str] = 'outputs/main/20260612_150326'
     out_dir: str = "outputs/main/" + time.strftime("%Y%m%d_%H%M%S")
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 

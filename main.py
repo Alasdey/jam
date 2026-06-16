@@ -1,9 +1,10 @@
+import json
 from collections import Counter
 from pathlib import Path
 import numpy as np
 import time
 
-from selection.skim import iterated_elimination_strictly_dominated_rows_fast
+from selection.skim import skim_population
 from rewards.payoff import compute_payoff_matrix
 from loggers import ExperimentLogger
 from creation.factory import make_creator
@@ -13,12 +14,24 @@ from config import MainConfig
 from rewards.wrapper import make_reward
 
 
+def load_population(expe_dir: str) -> list:
+    pops_dir = Path(expe_dir) / "populations"
+    work_pops = sorted(pops_dir.glob("work_pop_*.json"))
+    if not work_pops:
+        raise FileNotFoundError(f"No work_pop_*.json files found in {pops_dir}")
+    latest = work_pops[-1]
+    with open(latest) as f:
+        pop = [json.loads(line) for line in f if line.strip()]
+    print(f"Resuming from {latest} with population {len(pop)}")
+    return pop
+
+
 def main(cfg: MainConfig):
     creator = make_creator(cfg.experiment)
     interp = make_interpreter(cfg.experiment)
     logger = ExperimentLogger(cfg.out_dir, cfg)
     reward_fn = make_reward(cfg.experiment)
-    pop = []
+    pop = load_population(cfg.resume_from) if cfg.resume_from else []
     payoff = compute_payoff_matrix(cfg.experiment, pop, pop, reward_fn)
     for i in range(cfg.n_iter):
         n_old = len(pop)
@@ -56,21 +69,12 @@ def main(cfg: MainConfig):
         payout = payoff.copy()
         t1 = time.time()
         n_prev = n_old
-        for _ in range(cfg.n_skim):
-            skimmed = iterated_elimination_strictly_dominated_rows_fast(payoff)
-            if cfg.skim_fraction < 1.0:
-                dominated = np.setdiff1d(np.arange(len(pop)), skimmed)
-                n_keep = int(len(dominated) * (1 - cfg.skim_fraction))
-                kept = np.random.choice(dominated, size=n_keep, replace=False)
-                skimmed = np.sort(np.concatenate([skimmed, kept]))
-            n_removed = n_old - int((skimmed < n_old).sum())
-            n_new = int((skimmed >= n_old).sum())
-            pop = [pop[i] for i in skimmed.tolist()]
-            pop_methods = [pop_methods[i] for i in skimmed.tolist()]
-            payoff = payoff[skimmed, :][:, skimmed]
-            n_old = n_old - n_removed
-            if cfg.n_accepted and len(pop) < cfg.n_accepted:
-                break
+
+        if cfg.skim_when in ("before", "both"):
+            pop, pop_methods, payoff, n_old = skim_population(
+                pop, pop_methods, payoff, n_old, cfg.n_skim, cfg.skim_fraction, cfg.n_accepted,
+            )
+
         n_capped = 0
         if cfg.max_pop and len(pop) > cfg.max_pop:
             n_capped = len(pop) - cfg.max_pop
@@ -80,6 +84,12 @@ def main(cfg: MainConfig):
             pop_methods = [pop_methods[i] for i in keep]
             payoff = payoff[keep, :][:, keep]
             n_old = int((keep < n_old).sum())
+
+        if cfg.skim_when in ("after", "both"):
+            pop, pop_methods, payoff, n_old = skim_population(
+                pop, pop_methods, payoff, n_old, cfg.n_skim, cfg.skim_fraction, cfg.n_accepted,
+            )
+
         t2 = time.time()
         n_removed_total = n_prev - n_old
         n_survived_new = len(pop) - n_old
