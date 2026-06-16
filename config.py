@@ -139,6 +139,10 @@ class MainConfig:
     out_dir: str = "outputs/main/" + time.strftime("%Y%m%d_%H%M%S")
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 
+    def __post_init__(self):
+        if self.resume_from:
+            self.out_dir = self.resume_from
+
 
 # --- Full evolutionary loop config ---
 

@@ -75,7 +75,7 @@ def main(cfg: EvolutionConfig) -> None:
     for gen in range(cfg.n_iter):
         t0 = time.time()
 
-        offspring, _ = make_offspring(
+        offspring, _, _ = make_offspring(
             creator=creator,
             survivors=pop,
             n_offspring=cfg.n_offspring,
