@@ -135,7 +135,7 @@ class MainConfig:
     # when to skim relative to the max_pop cap: "before" | "after" | "both"
     skim_when: str = "before"
     # path to a previous run's output dir (e.g. outputs/main/20260101_120000) to resume its population from
-    resume_from: Optional[str] = 'outputs/main/20260612_150326'
+    resume_from: Optional[str] = None
     out_dir: str = "outputs/main/" + time.strftime("%Y%m%d_%H%M%S")
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 

@@ -6,6 +6,7 @@ rewards/*
 !rewards/wrapper.py
 libsubleq.so
 outputs*
+analysis/out/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
