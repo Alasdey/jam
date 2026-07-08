@@ -1,19 +1,19 @@
 """
 Build a Graphviz DOT ancestry graph for individuals in an experiment run.
 
-Reads every populations/work_pop_*.json snapshot in a run dir (so individuals
-that were later skimmed/capped out of the population still appear), unions
-them by id, and emits one DOT digraph: a node per individual (colored by
-creation method, labeled with its id and the number of generation snapshots
-it survived in) and an edge per parent->child relationship (styled by the
-child's creation method).
+Reads every populations/births_*.jsonl file in a run dir (all persisted
+individuals, including ones later skimmed/capped away), counts per-individual
+survival from populations/survivors_*.json, and emits one DOT digraph: a node
+per individual (colored by creation method, labeled with its id and the number
+of generations it survived) and an edge per parent->child relationship (styled
+by the child's creation method).
 
 Usage:
     python -m analysis.ancestry_graph <run_dir> [--out ancestry.dot] [--last-n-gens N] [--render]
 
-    <run_dir> is an experiment dir containing populations/work_pop_*.json
-    --last-n-gens limits to individuals first appearing in the last N
-        work_pop snapshots (full histories can be huge — millions of nodes).
+    <run_dir> is an experiment dir containing populations/births_*.jsonl
+    --last-n-gens limits to individuals born in the last N generations that
+        recorded births (full histories can be huge — millions of nodes).
     --render also invokes `sfdp -Tsvg` to produce ancestry.svg next to the .dot file.
         sfdp (not dot) is used because dot's crossing-minimization layout doesn't
         scale past a few thousand nodes. sfdp is still slow at real scale though
@@ -34,35 +34,38 @@ METHOD_STYLE = {
     "mutate": {"color": "green", "edge_style": "dashed"},
     "crossover": {"color": "orange", "edge_style": "bold"},
     "homoiconic": {"color": "blue", "edge_style": "dotted"},
+    "seeded": {"color": "purple", "edge_style": "solid"},
     None: {"color": "gray", "edge_style": "solid"},
 }
 
 
 def load_individuals(run_dir: str, last_n_gens: int | None = None) -> dict[int, dict]:
-    """Union of every individual seen across all work_pop snapshots, keyed by id."""
+    """All persisted individuals keyed by id, with survival counts attached."""
     pops_dir = os.path.join(run_dir, "populations")
-    files = sorted(glob.glob(os.path.join(pops_dir, "work_pop_*.json")))
-    if not files:
-        raise FileNotFoundError(f"No work_pop_*.json files found in {pops_dir}")
+    birth_files = sorted(glob.glob(os.path.join(pops_dir, "births_*.jsonl")))
+    if not birth_files:
+        raise FileNotFoundError(f"No births_*.jsonl files found in {pops_dir}")
     if last_n_gens is not None:
-        files = files[-last_n_gens:]
+        birth_files = birth_files[-last_n_gens:]
 
     individuals: dict[int, dict] = {}
-    for f in files:
-        gen = int(os.path.basename(f).rsplit("_", 1)[-1].split(".")[0])
-        with open(f) as fh:
+    for path in birth_files:
+        with open(path) as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
                     continue
-                obj = json.loads(line)
-                if isinstance(obj, list):
-                    continue  # old raw-genome format, no ancestry info
-                is_new = obj["id"] not in individuals
-                ind = individuals.setdefault(obj["id"], obj)
-                ind["n_gens_survived"] = ind.get("n_gens_survived", 0) + 1
-                if is_new:
-                    ind["first_gen"] = gen
+                ind = json.loads(line)
+                ind["first_gen"] = ind["born_gen"]
+                ind["n_gens_survived"] = 0
+                individuals[ind["id"]] = ind
+
+    for path in sorted(glob.glob(os.path.join(pops_dir, "survivors_*.json"))):
+        with open(path) as fh:
+            survivors = json.load(fh)
+        for ind_id in survivors["ids"]:
+            if ind_id in individuals:
+                individuals[ind_id]["n_gens_survived"] += 1
     return individuals
 
 

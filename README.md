@@ -25,23 +25,29 @@ gcc -shared -fPIC -o interpreters/treemo_c/libtreemo.so interpreters/treemo_c/tr
 
 ### 3. Run
 ```bash
-uv run python main.py
+uv run python main.py                  # "main" preset
+uv run python main.py evolution        # any preset from config.PRESETS
+uv run pytest                          # test suite
 ```
 
 ## Project layout
 
 | Path | Role |
 |---|---|
-| `config.py` | All dataclass configs (experiment, genetics, payoff, and per-entrypoint configs) |
-| `main.py` | Main evolutionary loop: random injection + offspring, payoff matrix, skim, max-pop cap |
-| `creation/` | Program creators — random init, mutation, crossover, homoiconic recombination, per-interpreter |
-| `interpreters/` | Interpreter implementations (Subleq, IconFracTran, Treemo) and the `make_interpreter` factory |
-| `rewards/` | Reward functions and payoff-matrix computation |
-| `selection/` | Skim (iterated elimination of dominated strategies) and Nash-subset selection |
-| `sides/` | Alternative/experimental entrypoints (random baseline, random+skim, full evolution loop, homoiconic round-robin) |
-| `loggers/` | `ExperimentLogger` — writes config/meta/metrics/population files per run |
-| `analysis/` | Visualization helpers (e.g. Treemo tree → graphviz) |
-| `outputs/` | Per-run logs and population dumps (one timestamped subdir per run) |
+| `config.py` | All dataclass configs, run presets (`PRESETS`), and config hashing (`compat_key`, `method_key`) |
+| `main.py` | Thin dispatcher: `python main.py [preset]` → `core.loop.run` |
+| `core/` | `types.py` (Program, Individual, Interpreter protocol) and `loop.py` (the unified generation loop, resume, checkpointing) |
+| `creation/` | Program creators — random init, mutation, crossover, homoiconic recombination; `CREATORS` registry |
+| `interpreters/` | Interpreter implementations (Subleq, IconFracTran, Treemo); `INTERPRETERS` registry |
+| `rewards/` | Reward functions (`REWARDS` registry, `RewardSpec.zero_sum`) and `PayoffEngine` |
+| `selection/` | Selection steps (`SELECTION_STEPS`: skim, cap_top, cap_random, nash) composed into a pipeline |
+| `store/` | Population store (`store.publish`) and cross-population tournaments (`store.tournament`) |
+| `sides/` | `random_baseline.py` — random-pool baseline with a fixed reference population |
+| `loggers/` | `ExperimentLogger` (write side) and `run_io` (read side) of the run-directory format |
+| `analysis/` | Ancestry visualization, tournament ratings, Treemo tree → graphviz |
+| `tests/` | pytest suite (determinism, resume, reconstruction, store/tournament round-trips) |
+| `docs/formats.md` | All on-disk formats + deferred design seams (islands, multi-reward, matchup cache) |
+| `outputs/` | Per-run dirs, population store, tournaments (one timestamped subdir per run) |
 
 ## Interpreters
 
@@ -68,20 +74,24 @@ Selected via `ExperimentConfig.reward`: `blind | placeholder | quine_pressure`.
 | `placeholder` | `rewards/placeholder_reward.py` | Runs both programs against a fixed input; whoever produces more output wins ±1, else 0. |
 | `quine_pressure` | `rewards/quine_pressure_reward.py` | Each program runs on the other's code as input. Reward favors the program whose output more closely resembles *itself* (normalized LCS self-similarity), pushing toward quine-like behaviour. Fully symmetric/zero-sum. |
 
-`rewards/payoff.py` computes the full payoff matrix for a reference population
-vs. a working population (`compute_payoff_matrix`), optionally in parallel via
-`ProcessPoolExecutor` (`PayoffConfig.n_workers > 1`).
+`rewards/payoff.py` provides `PayoffEngine` — the single choke point through
+which both the evolution loop and the tournament tool evaluate matchups.
+`matrix(ref, pop)` computes a payoff block (in parallel when
+`PayoffConfig.n_workers > 1`, with the worker pool reused across generations);
+`extend(payoff, old, new)` grows the square self-play matrix, deriving the
+reverse block as `-A.T` when `RewardSpec.zero_sum` allows it.
 
 ## Selection
 
-- `selection/skim.py` — iterated elimination of strictly dominated rows.
-  `iterated_elimination_strictly_dominated_rows_fast` is the vectorized version
-  used by default; the non-`_fast` version is kept for reference/validation.
-  `skim_fraction` (in the main/evolution configs) controls what fraction of the
-  dominated set is actually dropped per round (1.0 = drop all, 0.0 = keep all).
-- `selection/nash_set.py` — `compute_nash_equilibrium` / `compute_nash_subset`
-  use `nashpy` to find Nash equilibria of the zero-sum payoff matrix and return
-  the union of equilibrium supports.
+Selection is an ordered pipeline of steps (`RunConfig.selection`), each mapping
+the square payoff matrix to surviving indices (`selection/base.py`):
+
+| Step | Config | Behaviour |
+|---|---|---|
+| `skim` | `SkimStepConfig(n_rounds, fraction, n_accepted)` | Iterated elimination of strictly dominated strategies (`selection/skim.py`; the non-`_fast` variant is kept for reference — it compares over all columns instead of the symmetric active set). `fraction` controls what share of the dominated set is dropped per round; skimming stops early below `n_accepted`. |
+| `cap_top` | `CapStepConfig(max_pop)` | Keep the `max_pop` best payoff row-sums. |
+| `cap_random` | `CapStepConfig(kind="cap_random", max_pop)` | Uniform random downsample to `max_pop`. |
+| `nash` | `NashStepConfig()` | Union of Nash-equilibrium supports via `nashpy` (`selection/nash_set.py`). Support enumeration is exponential — small populations only. |
 
 ## Genetic operators (`creation/genetics.py`)
 
@@ -97,35 +107,69 @@ vs. a working population (`compute_payoff_matrix`), optionally in parallel via
 crossover (with `homoiconic_prob` chance of trying homoiconic recombination
 first) or mutation of a single survivor, per `GeneticsConfig`.
 
-## Entrypoints
+## Running experiments
 
-| Script | Config | Description |
-|---|---|---|
-| `main.py` | `MainConfig` | Main loop: each generation adds `n_random` fresh + `n_offspring` bred individuals, computes the payoff matrix incrementally, skims dominated rows (`n_skim` rounds, `skim_fraction`), and caps the population at `max_pop` by top payoff sum. |
-| `sides/evolution.py` | `EvolutionConfig` | Generalized evolutionary loop with pluggable selection (`skim_fast`, `skim_slow`, `nash_subset`, `none`). |
-| `sides/random_skimmed.py` | `RandomSkimmedConfig` | Population grows by pure random injection only (no breeding), with periodic skimming. |
-| `sides/random_baseline.py` | `RandomBaselineConfig` | Samples random pools and tracks the best payoff seen, with no selection/evolution — a baseline for comparison. |
-| `sides/homoiconic.py` | n/a (hardcoded paths) | Loads a saved population and round-robin scores candidate programs against it. |
+One unified loop (`core/loop.py`) drives every experiment; a run is a
+`RunConfig`. Presets reproduce the historical entry points:
 
-All entrypoints write to `outputs/<name>/<timestamp>/` via `ExperimentLogger`
-(`config.json`, `meta.json`, `metrics.jsonl`, `work_pop.json`, `ref_pop.json`).
+| Preset | Description |
+|---|---|
+| `main` | Each generation adds `n_random` fresh + `n_offspring` bred individuals, extends the payoff matrix incrementally, then applies `[skim, cap_top]`. |
+| `evolution` | Fixed initial population (`n_init`), offspring only, `[skim, cap_top]`. |
+| `random_skimmed` | Pure random injection (no breeding), `[skim, cap_random]`. |
+
+(`sides/random_baseline.py` remains a separate script: random pools scored
+against a fixed reference population, no evolution.)
+
+Every fresh run resolves and persists an RNG `seed`, checkpoints each
+generation, and is exactly resumable: set `RunConfig.resume_from` to a run dir
+to continue it for `n_iter` more generations (RNG state is restored, so an
+interrupted run reproduces the uninterrupted one bit-for-bit). Runs write
+`outputs/<preset>/<timestamp>/` — config, metrics, per-generation
+births/survivors deltas, optional payoff matrices (`payoff_every`); see
+[docs/formats.md](docs/formats.md).
+
+## Comparing methodologies (population store + tournaments)
+
+Rewards are relative — an individual's score only means something against its
+opponents, so different runs cannot be compared by their in-run payoffs.
+Instead: publish each run's final population as a sample of its methodology,
+then let stored populations play each other offline.
+
+```bash
+# publish a run's final population (or set RunConfig.publish_label to auto-publish)
+uv run python -m store.publish outputs/main/<ts> --label quine-skim3
+
+# create a tournament (fixes reward + interpreter compat), add populations
+uv run python -m store.tournament create --dir outputs/store/tournaments/quine_v1 \
+    --reward quine_pressure --from-pop <pop_id> --workers 8
+uv run python -m store.tournament add --dir outputs/store/tournaments/quine_v1 <pop_id> ...
+
+# derive ratings from the stored payoff blocks (re-run any time)
+uv run python -m store.tournament ratings --dir outputs/store/tournaments/quine_v1
+```
+
+Adding a population computes only the missing cross-population blocks, so
+evaluating a new methodology against the existing pool is incremental. Only
+populations with the same `compat_key` (interpreter + its settings) can meet;
+ratings (mean payoff / win-rate, per-opponent breakdown) are always relative
+to the member pool — the raw blocks are the stable artifact. Composite runs
+can seed generation 0 from stored populations via `RunConfig.seed_populations`.
 
 ## Analysis
 
-`analysis/tree_viz.py` turns a Treemo tree (Dyck word of 0/1) into a graphviz
-`digraph` string for visualization.
-
-Also in the outputs logs this could help:
-```regex
-(.*"pop_size": 1000,.*\n)*.*"pop_size": 1,.*"random": 1\}
-```
+- `analysis/ancestry_graph.py` / `analysis/ancestry_columns.py` — lineage
+  visualizations over a run's births/survivors files.
+- `analysis/tournament_ratings.py` — ratings from tournament blocks
+  (Elo/Nash-averaging can be added over the same artifacts).
+- `analysis/tree_viz.py` — Treemo tree (Dyck word of 0/1) → graphviz `digraph`.
 
 ## Todo's
 
-- Unit testing / sanity checks for interpreters, rewards, and selection are
-  still missing.
 - Subleq is broken in some way — payoffs computed with it produce matrices
   that don't make sense.
 - Investigate whether a module-level compile cache is worth adding for
   `treemo_c` at low `max_step` regimes (see
   [interpreters/treemo_c/README.md](interpreters/treemo_c/README.md)).
+- Matchup-result caching in `PayoffEngine.matrix` once matchup cost dominates
+  (see the deferred-seams section of [docs/formats.md](docs/formats.md)).

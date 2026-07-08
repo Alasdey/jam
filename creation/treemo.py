@@ -8,9 +8,9 @@ from creation.homoiconic import HOMOICONIC_OPS
 
 
 def gen_tree(n: int = 3) -> list[int]:
-    """Uniform random plane tree with n nodes."""
+    """Uniform random plane tree with n nodes, as a Dyck word of length 2(n-1)."""
     if n == 1:
-        return Node()
+        return []
 
     # Step 1: Generate a random sequence of (n-1) U's and (n-1) D's
     steps = [1] * (n - 1) + [-1] * (n - 1)

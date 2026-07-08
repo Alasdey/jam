@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Iterable, List, Optional, Tuple
+from typing import Optional
 
 
 def iterated_elimination_strictly_dominated_rows(
@@ -153,42 +153,3 @@ def iterated_elimination_strictly_dominated_rows_fast(
         active = active[~dominated]
 
     return active
-
-
-def skim_population(
-    pop: list,
-    pop_meta: list,
-    payoff: np.ndarray,
-    n_old: int,
-    n_skim: int,
-    skim_fraction: float = 1.0,
-    n_accepted: Optional[int] = None,
-) -> Tuple[list, list, np.ndarray, int]:
-    """
-    Apply up to `n_skim` rounds of iterated elimination of dominated rows to
-    pop/pop_meta/payoff, where the first `n_old` entries are "old" survivors
-    and the rest are newly-added individuals.
-
-    pop_meta is a parallel list of per-individual metadata dicts (id, method, parents).
-
-    skim_fraction controls what share of the dominated set is actually dropped
-    per round (1.0 = drop all dominated, 0.0 = keep all). Stops early once
-    len(pop) < n_accepted, if n_accepted is set.
-
-    Returns the (possibly shrunk) pop, pop_meta, payoff, and updated n_old.
-    """
-    for _ in range(n_skim):
-        skimmed = iterated_elimination_strictly_dominated_rows_fast(payoff)
-        if skim_fraction < 1.0:
-            dominated = np.setdiff1d(np.arange(len(pop)), skimmed)
-            n_keep = int(len(dominated) * (1 - skim_fraction))
-            kept = np.random.choice(dominated, size=n_keep, replace=False)
-            skimmed = np.sort(np.concatenate([skimmed, kept]))
-        n_removed = n_old - int((skimmed < n_old).sum())
-        pop = [pop[i] for i in skimmed.tolist()]
-        pop_meta = [pop_meta[i] for i in skimmed.tolist()]
-        payoff = payoff[skimmed, :][:, skimmed]
-        n_old = n_old - n_removed
-        if n_accepted and len(pop) < n_accepted:
-            break
-    return pop, pop_meta, payoff, n_old

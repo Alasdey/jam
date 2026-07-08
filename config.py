@@ -1,7 +1,9 @@
 
+import hashlib
+import json
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 # --- Code generation config ---
 
@@ -48,6 +50,31 @@ class SubleqConfig:
 class PayoffConfig:
     # 1 = sequential, >1 = use ProcessPoolExecutor
     n_workers: int = 1
+
+
+# --- Selection step configs (ordered pipeline applied each generation) ---
+
+@dataclass
+class SkimStepConfig:
+    kind: str = "skim"
+    # rounds of iterated elimination of strictly dominated strategies
+    n_rounds: int = 3
+    # fraction of the dominated set actually dropped per round (1.0 = all)
+    fraction: float = 1.0
+    # stop skimming once the population is below this size (None = never)
+    n_accepted: Optional[int] = 2_000
+
+
+@dataclass
+class CapStepConfig:
+    # "cap_top" keeps the best payoff-row-sums, "cap_random" downsamples uniformly
+    kind: str = "cap_top"
+    max_pop: int = 1_000
+
+
+@dataclass
+class NashStepConfig:
+    kind: str = "nash"
 
 
 # --- Genetics / operator config ---
@@ -103,40 +130,32 @@ class RandomBaselineConfig:
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 
 
-# --- Random skimmed experiment config ---
+# --- Unified run config (driven by core.loop.run) ---
 
 @dataclass
-class RandomSkimmedConfig:
-    n_pop: int = 10**3
+class RunConfig:
+    # RNG seed; resolved to a concrete value at startup and persisted in config.json
+    seed: Optional[int] = None
+    # extra random individuals injected at generation 0 only (fresh starts)
+    n_init: int = 0
+    # store pop_ids whose individuals seed generation 0 (composite runs)
+    seed_populations: list[str] = field(default_factory=list)
+    # fresh randoms / genetic offspring injected per generation
+    n_random: int = 10**2
+    n_offspring: int = 10**2
     n_iter: int = 10**4
-    n_skim: int = 3
-    # fraction of dominated individuals removed per skim (0 = keep all, 1 = remove all)
-    skim_fraction: float = 1
-    n_accepted: Optional[int] = 2_000
-    # if set, randomly downsample to this size after each generation
-    max_pop: Optional[int] = 2_000  
-    out_dir: str = "outputs/random_skimmed/" + time.strftime("%Y%m%d_%H%M%S")
-    experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
-
-
-# --- Main entry point config ---
-
-@dataclass
-class MainConfig:
-    n_random: int = 10**2     # fresh random individuals injected per generation
-    n_offspring: int = 10**2  # genetic offspring (mutate/crossover/homoiconic) per generation
-    n_iter: int = 10**4
-    n_skim: int = 3
-    # fraction of dominated individuals removed per skim (0 = keep all, 1 = remove all)
-    skim_fraction: float = 1
-    n_accepted: Optional[int] = 2_000
-    # if set, randomly downsample to this size after each generation
-    max_pop: Optional[int] = 1_000
-    # when to skim relative to the max_pop cap: "before" | "after" | "both"
-    skim_when: str = "before"
-    # path to a previous run's output dir (e.g. outputs/main/20260101_120000) to resume its population from
+    # ordered selection pipeline applied after payoff extension each generation
+    selection: list = field(default_factory=lambda: [SkimStepConfig(), CapStepConfig()])
+    # persist payoffs/payoff_XXXXXX.npz every N generations + final (0 = never)
+    payoff_every: int = 0
+    # False: persist only newborns that survive their birth generation
+    log_all_births: bool = False
+    # path to a previous run's out_dir to continue (runs n_iter MORE generations)
     resume_from: Optional[str] = None
-    out_dir: str = "outputs/main/" + time.strftime("%Y%m%d_%H%M%S")
+    # if set, publish the final population to the store under this label
+    publish_label: Optional[str] = None
+    store_dir: str = "outputs/store/populations"
+    out_dir: str = field(default_factory=lambda: "outputs/run/" + time.strftime("%Y%m%d_%H%M%S"))
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 
     def __post_init__(self):
@@ -144,23 +163,94 @@ class MainConfig:
             self.out_dir = self.resume_from
 
 
-# --- Full evolutionary loop config ---
+def _stamped(prefix: str) -> str:
+    return prefix + time.strftime("%Y%m%d_%H%M%S")
 
-@dataclass
-class EvolutionConfig:
-    # Initial population size
-    n_init: int = 50
-    # Offspring produced each generation
-    n_offspring: int = 20
-    # Number of generations
-    n_iter: int = 1000
-    # Selection method: "skim_fast" | "skim_slow" | "nash_subset" | "none"
-    selection: str = "skim_fast"
-    # Skim rounds applied per generation (only for skim_* methods)
-    n_skim: int = 2
-    # Hard cap on population size after selection (None = uncapped)
-    pop_cap: Optional[int] = 500
-    # Output directory
-    out_dir: str = "outputs/evolution/" + time.strftime("%Y%m%d_%H%M%S")
-    # Underlying experiment config (interpreter, reward, genetics, …)
-    experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
+
+def preset_main() -> RunConfig:
+    # the historical main.py loop: randoms + offspring, skim then cap_top
+    return RunConfig(out_dir=_stamped("outputs/main/"))
+
+
+def preset_evolution() -> RunConfig:
+    # the historical sides/evolution.py loop: fixed initial pop, offspring only
+    return RunConfig(
+        n_init=50,
+        n_random=0,
+        n_offspring=20,
+        n_iter=1000,
+        selection=[SkimStepConfig(n_rounds=2, n_accepted=None), CapStepConfig(max_pop=500)],
+        out_dir=_stamped("outputs/evolution/"),
+    )
+
+
+def preset_random_skimmed() -> RunConfig:
+    # the historical sides/random_skimmed.py loop: random injection only
+    return RunConfig(
+        n_random=10**3,
+        n_offspring=0,
+        selection=[SkimStepConfig(), CapStepConfig(kind="cap_random", max_pop=2_000)],
+        out_dir=_stamped("outputs/random_skimmed/"),
+    )
+
+
+PRESETS: dict[str, Callable[[], RunConfig]] = {
+    "main": preset_main,
+    "evolution": preset_evolution,
+    "random_skimmed": preset_random_skimmed,
+}
+
+
+# --- Config hashing / reconstruction ---
+
+def _canonical_hash(obj) -> str:
+    return hashlib.sha256(
+        json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()[:12]
+
+
+# Which sub-config carries an interpreter's execution semantics.
+INTERPRETER_CFG_FIELD = {
+    "subleq": "subleq",
+    "iconfractran": "iconfractran",
+    "treemo": "treemo",
+    "treemo_py": "treemo",
+}
+
+
+def compat_key(exp_cfg_dict: dict) -> str:
+    """
+    Hash of execution semantics only: the interpreter name and its sub-config.
+    Two populations can play each other iff their compat_keys match. Creation
+    settings (code bounds, genetics) and the reward are excluded: they shape
+    how programs were made, not how they run. treemo and treemo_py are kept
+    distinct on purpose — the implementations are meant to agree but have not
+    been proven equivalent.
+    """
+    name = exp_cfg_dict["interpreter"]
+    payload = {"interpreter": name, "config": exp_cfg_dict[INTERPRETER_CFG_FIELD[name]]}
+    return _canonical_hash(payload)
+
+
+def method_key(run_cfg_dict: dict) -> str:
+    """
+    Hash identifying a methodology: the full run config minus run identity
+    (seed, paths). Same-methodology samples across seeds share this key.
+    """
+    excluded = ("seed", "out_dir", "resume_from", "publish_label", "store_dir")
+    payload = {k: v for k, v in run_cfg_dict.items() if k not in excluded}
+    return _canonical_hash(payload)
+
+
+def exp_cfg_from_dict(d: dict) -> ExperimentConfig:
+    """Rebuild an ExperimentConfig from a persisted config dict (fails loudly on drift)."""
+    return ExperimentConfig(
+        interpreter=d["interpreter"],
+        reward=d["reward"],
+        subleq=SubleqConfig(**d["subleq"]),
+        iconfractran=IconfractranConfig(**d["iconfractran"]),
+        treemo=TreemoConfig(**d["treemo"]),
+        payoff=PayoffConfig(**d["payoff"]),
+        genetics=GeneticsConfig(**d["genetics"]),
+        code=CodeConfig(**d["code"]),
+    )

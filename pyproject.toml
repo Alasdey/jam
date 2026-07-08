@@ -8,3 +8,10 @@ dependencies = [
     "matplotlib>=3.10.8",
     "nashpy>=0.0.43",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
