@@ -4,6 +4,8 @@ rewards/*
 !rewards/placeholder_reward.py
 !rewards/quine_pressure_reward.py
 !rewards/wrapper.py
+!rewards/base.py
+!rewards/payoff.py
 libsubleq.so
 outputs*
 analysis/out/
