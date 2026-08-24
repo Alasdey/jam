@@ -32,7 +32,7 @@ class TreemoConfig:
     # Rule advancement strategy:
     #   pass_mode=True  → a rule fires at most once before the interpreter moves on
     #   pass_mode=False → a rule fires until it no longer matches before moving on
-    pass_mode: bool = False # True makes any ouput and inert input
+    pass_mode: bool = False # True makes any ouput an inert input
     # Where to move after a rule fires and the interpreter advances:
     #   first_mode=True  → restart from rule 0
     #   first_mode=False → continue to the next rule in sequence
@@ -135,7 +135,7 @@ class RandomBaselineConfig:
 @dataclass
 class RunConfig:
     # RNG seed; resolved to a concrete value at startup and persisted in config.json
-    seed: Optional[int] = None
+    seed: Optional[int] = 42
     # extra random individuals injected at generation 0 only (fresh starts)
     n_init: int = 0
     # store pop_ids whose individuals seed generation 0 (composite runs)
@@ -147,17 +147,17 @@ class RunConfig:
     # ordered selection pipeline applied after payoff extension each generation
     selection: list = field(default_factory=lambda: [SkimStepConfig(), CapStepConfig()])
     # persist payoffs/payoff_XXXXXX.npz every N generations + final (0 = never)
-    payoff_every: int = 0
+    payoff_every: int = 10*3
     # False: persist only newborns that survive their birth generation
     log_all_births: bool = False
     # path to a previous run's out_dir to continue (runs n_iter MORE generations)
-    resume_from: Optional[str] = None
+    resume_from: Optional[str] = "outputs/main/20260719_173059" # None
     # if set, publish the final population to the store under this label
-    publish_label: Optional[str] = None
+    publish_label: Optional[str] = 'initial_test'
     store_dir: str = "outputs/store/populations"
     out_dir: str = field(default_factory=lambda: "outputs/run/" + time.strftime("%Y%m%d_%H%M%S"))
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
-
+    
     def __post_init__(self):
         if self.resume_from:
             self.out_dir = self.resume_from
