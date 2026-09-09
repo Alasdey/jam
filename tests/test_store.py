@@ -9,9 +9,8 @@ from config import (
     RunConfig,
     SkimStepConfig,
     TreemoConfig,
-    compat_key,
-    method_key,
 )
+from core.config_keys import compat_key, method_key
 from core.loop import run
 from loggers.run_io import reconstruct_population
 from store.population_store import (

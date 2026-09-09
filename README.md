@@ -34,7 +34,8 @@ uv run pytest                          # test suite
 
 | Path | Role |
 |---|---|
-| `config.py` | All dataclass configs, run presets (`PRESETS`), and config hashing (`compat_key`, `method_key`) |
+| `config.py` | All dataclass configs and run presets (`PRESETS`) |
+| `core/config_keys.py` | Config hashing (`compat_key`, `method_key`) and `exp_cfg_from_dict` |
 | `main.py` | Thin dispatcher: `python main.py [preset]` → `core.loop.run` |
 | `core/` | `types.py` (Program, Individual, Interpreter protocol) and `loop.py` (the unified generation loop, resume, checkpointing) |
 | `creation/` | Program creators — random init, mutation, crossover, homoiconic recombination; `CREATORS` registry |

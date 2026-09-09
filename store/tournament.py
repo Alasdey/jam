@@ -29,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
-from config import exp_cfg_from_dict
+from core.config_keys import exp_cfg_from_dict
 from rewards.base import REWARDS
 from rewards.payoff import PayoffEngine
 from store.population_store import load

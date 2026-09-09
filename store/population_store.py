@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from config import compat_key, method_key
+from core.config_keys import compat_key, method_key
 from core.types import Program
 from loggers.run_io import last_gen, reconstruct_population
 

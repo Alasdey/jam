@@ -23,7 +23,8 @@ from typing import Sequence
 
 import numpy as np
 
-from config import RunConfig, compat_key
+from config import RunConfig
+from core.config_keys import compat_key
 from core.types import Individual, Program
 from creation import build_creator
 from creation.base import Creator

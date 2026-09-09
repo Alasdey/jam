@@ -50,7 +50,7 @@ returns. Set `log_all_births=True` to also keep immediately-culled newborns
 
 ## Config keys
 
-Defined in `config.py`:
+Defined in `core/config_keys.py`:
 
 - `compat_key(experiment_dict)` — sha256[:12] of `{interpreter, <its
   sub-config>}`. Execution semantics only: two populations can play each other
