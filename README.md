@@ -41,7 +41,7 @@ uv run pytest                          # test suite
 | `creation/` | Program creators — random init, mutation, crossover, homoiconic recombination; `CREATORS` registry |
 | `interpreters/` | Interpreter implementations (Subleq, IconFracTran, Treemo); `INTERPRETERS` registry |
 | `rewards/` | Reward functions (`REWARDS` registry, `RewardSpec.zero_sum`) and `PayoffEngine` |
-| `selection/` | Selection steps (`SELECTION_STEPS`: skim, cap_top, cap_random, nash) composed into a pipeline |
+| `selection/` | Selection steps (`SELECTION_STEPS`: dedupe, skim, cap_top, cap_random, nash) composed into a pipeline |
 | `store/` | Population store (`store.publish`) and cross-population tournaments (`store.tournament`) |
 | `sides/` | `random_baseline.py` — random-pool baseline with a fixed reference population |
 | `loggers/` | `ExperimentLogger` (write side) and `run_io` (read side) of the run-directory format |
@@ -84,11 +84,23 @@ reverse block as `-A.T` when `RewardSpec.zero_sum` allows it.
 
 ## Selection
 
-Selection is an ordered pipeline of steps (`RunConfig.selection`), each mapping
-the square payoff matrix to surviving indices (`selection/base.py`):
+Selection is an ordered pipeline of steps, each mapping the square payoff matrix
+**and the genomes it is indexed by** to surviving indices (`selection/base.py`).
+Genomes are passed because not every criterion is a function of the payoff.
+
+There are **two pipelines**, drawn from the same `SELECTION_STEPS` registry:
+
+| Pipeline | When | Payoff argument |
+|---|---|---|
+| `RunConfig.pre_selection` | before `PayoffEngine.extend` | `None` — the matrix does not exist yet, so whatever this drops never costs a matchup |
+| `RunConfig.selection` | after evaluation | the real matrix |
+
+Only steps in `selection.base.PAYOFF_FREE_STEPS` may go in `pre_selection`;
+`build_selection(..., pre=True)` rejects the rest rather than failing mid-run.
 
 | Step | Config | Behaviour |
 |---|---|---|
+| `dedupe` | `DedupeStepConfig()` | Keep one individual per distinct genome (exact match, first occurrence). Default `pre_selection`, so duplicates are discovered for free. Selection by payoff alone cannot do this: identical genomes have identical payoff rows, so neither strictly dominates the other (`skim`) and their row-sums tie (`cap_top`) — duplicates otherwise survive as a block, and under an all-draws reward nothing is dominated at all, so `cap_top` ends up culling arbitrarily. Matching is on the genome, never on the payoff row, which is identical for *every* individual when the reward draws every matchup. |
 | `skim` | `SkimStepConfig(n_rounds, fraction, n_accepted)` | Iterated elimination of strictly dominated strategies (`selection/skim.py`; the non-`_fast` variant is kept for reference — it compares over all columns instead of the symmetric active set). `fraction` controls what share of the dominated set is dropped per round; skimming stops early below `n_accepted`. |
 | `cap_top` | `CapStepConfig(max_pop)` | Keep the `max_pop` best payoff row-sums. |
 | `cap_random` | `CapStepConfig(kind="cap_random", max_pop)` | Uniform random downsample to `max_pop`. |
@@ -115,9 +127,12 @@ One unified loop (`core/loop.py`) drives every experiment; a run is a
 
 | Preset | Description |
 |---|---|
-| `main` | Each generation adds `n_random` fresh + `n_offspring` bred individuals, extends the payoff matrix incrementally, then applies `[skim, cap_top]`. |
+| `main` | Each generation adds `n_random` fresh + `n_offspring` bred individuals, drops duplicates, extends the payoff matrix incrementally, then applies `[skim, cap_top]`. |
 | `evolution` | Fixed initial population (`n_init`), offspring only, `[skim, cap_top]`. |
 | `random_skimmed` | Pure random injection (no breeding), `[skim, cap_random]`. |
+
+All three get the default `pre_selection=[DedupeStepConfig()]`; pass
+`pre_selection=[]` to run without it.
 
 (`sides/random_baseline.py` remains a separate script: random pools scored
 against a fixed reference population, no evolution.)

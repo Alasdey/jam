@@ -53,6 +53,17 @@ class PayoffConfig:
 # --- Selection step configs (ordered pipeline applied each generation) ---
 
 @dataclass
+class DedupeStepConfig:
+    # Keep one individual per distinct genome (exact match, first occurrence).
+    # Reads no payoff, so it belongs in RunConfig.pre_selection, where the
+    # duplicates it drops never cost a matchup.
+    # Selection by payoff alone cannot do this: identical genomes have identical
+    # payoff rows, so neither strictly dominates the other (skim) and their
+    # row-sums tie (cap_top) — duplicates always survive as a block.
+    kind: str = "dedupe"
+
+
+@dataclass
 class SkimStepConfig:
     kind: str = "skim"
     # rounds of iterated elimination of strictly dominated strategies
@@ -142,6 +153,10 @@ class RunConfig:
     n_random: int = 10**2
     n_offspring: int = 10**2
     n_iter: int = 10**4
+    # selection steps applied BEFORE payoff extension, on genomes alone: they
+    # thin the prospective population so the dropped individuals never cost a
+    # matchup. Only payoff-free steps may go here (selection.base validates).
+    pre_selection: list = field(default_factory=lambda: [DedupeStepConfig()])
     # ordered selection pipeline applied after payoff extension each generation
     selection: list = field(default_factory=lambda: [SkimStepConfig(), CapStepConfig()])
     # persist payoffs/payoff_XXXXXX.npz every N generations + final (0 = never)
@@ -149,7 +164,8 @@ class RunConfig:
     # False: persist only newborns that survive their birth generation
     log_all_births: bool = False
     # path to a previous run's out_dir to continue (runs n_iter MORE generations)
-    resume_from: Optional[str] = "outputs/main/20260719_173059" # None
+    # resume_from: Optional[str] = "outputs/main/20260719_173059" # None
+    resume_from: Optional[str] = None
     # if set, publish the final population to the store under this label
     publish_label: Optional[str] = 'initial_test'
     store_dir: str = "outputs/store/populations"

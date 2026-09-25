@@ -7,6 +7,11 @@ from selection.skim import (
     iterated_elimination_strictly_dominated_rows_fast,
 )
 
+
+def _genomes(payoff):
+    """Distinct placeholder genomes; skim ignores them, the signature needs them."""
+    return [[i] for i in range(payoff.shape[0])]
+
 # Rock-paper-scissors: no strategy is dominated.
 RPS = np.array([
     [0, -1, 1],
@@ -54,7 +59,7 @@ def test_slow_full_column_semantics_do_not_cascade():
 
 def test_build_skim_step_returns_surviving_indices():
     step = build_skim(SkimStepConfig(n_rounds=1, fraction=1.0, n_accepted=None))
-    assert step(CASCADE.copy()).tolist() == [0]
+    assert step(CASCADE.copy(), _genomes(CASCADE)).tolist() == [0]
 
 
 def test_build_skim_fraction_keeps_a_share_of_dominated():
@@ -67,7 +72,7 @@ def test_build_skim_fraction_keeps_a_share_of_dominated():
     ])
     np.random.seed(0)
     step = build_skim(SkimStepConfig(n_rounds=1, fraction=0.5, n_accepted=None))
-    kept = step(payoff).tolist()
+    kept = step(payoff, _genomes(payoff)).tolist()
     # survivor [0] plus int(3 * (1 - 0.5)) = 1 randomly retained dominated row
     assert len(kept) == 2
     assert 0 in kept
@@ -76,4 +81,4 @@ def test_build_skim_fraction_keeps_a_share_of_dominated():
 def test_build_skim_n_accepted_stops_early():
     step = build_skim(SkimStepConfig(n_rounds=5, fraction=1.0, n_accepted=100))
     # population already below n_accepted: one round runs, then it stops
-    assert step(RPS.copy()).tolist() == [0, 1, 2]
+    assert step(RPS.copy(), _genomes(RPS)).tolist() == [0, 1, 2]

@@ -41,10 +41,13 @@ returns. Set `log_all_births=True` to also keep immediately-culled newborns
 - Individual ids are unique within one run (monotonic across resumes;
   the checkpoint carries `next_id`).
 - `metrics.jsonl` per-generation fields: `gen`, `t`, `create_s`, `payoff_s`,
-  `select_s`, `pop_size`, `n_added`, `n_added_by_method`, `n_removed`,
-  `n_removed_by_step` (one entry per selection step, in pipeline order),
+  `select_s`, `pop_size`, `n_added`, `n_added_by_method`, `n_removed_pre`,
+  `n_removed_by_pre_step` (one entry per `pre_selection` step, in pipeline
+  order), `n_removed`, `n_removed_by_step` (one entry per `selection` step),
   `n_survived_new`, `n_survived_new_by_method`, and `payoff_*` / `payout_*`
   stats (row-sum mean/std/min/max, post- and pre-selection respectively).
+  `n_added` counts what survived `pre_selection` and was actually evaluated,
+  so attempted births are `n_added + n_removed_pre`.
 - `seeded_provenance` (composite runs): list of `"<pop_id>/<original_id>"`;
   entry i describes the seeded individual with local id i.
 

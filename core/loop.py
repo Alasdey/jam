@@ -4,8 +4,12 @@ Unified generation loop.
 One run = repeated _step() over an explicit RunState:
   1. create   — seeded genomes (gen 0), fresh randoms, genetic offspring
                 (bootstrap randoms while the population is still empty)
-  2. evaluate — PayoffEngine.extend() grows the square self-play payoff matrix
-  3. select   — each configured selection step maps payoff -> surviving indices
+  2. pre-select — RunConfig.pre_selection, on genomes alone (payoff=None):
+                thins the prospective population before any matchup is spent on
+                it. `dedupe` lives here — duplicates cost nothing to discover.
+  3. evaluate — PayoffEngine.extend() grows the square self-play payoff matrix
+  4. select   — RunConfig.selection: each step maps (payoff, genomes) ->
+                surviving indices
 
 _step is a pure function of (state, rng): a future multi-pool/island driver
 can hold several RunStates and migrate individuals between them without
@@ -72,6 +76,7 @@ def _step(
     interp,
     engine: PayoffEngine,
     selectors: Sequence[SelectFn],
+    pre_selectors: Sequence[SelectFn] = (),
     seed_genomes: Sequence[Program] = (),
 ) -> tuple[RunState, GenRecord]:
     t0 = time.time()
@@ -108,20 +113,40 @@ def _step(
             new_inds.append(Individual(next_id, creator.random(), "random", [], state.gen))
             next_id += 1
 
+    # Pre-evaluation selection, on genomes alone: thins the prospective
+    # population before any matchup is spent on it. Positions index
+    # old_pop + new_inds; survivors stay sorted, so the old block keeps its
+    # order and state.payoff can simply be reindexed by the old survivors.
+    old_payoff = state.payoff
+    n_removed_by_pre_step: list[int] = []
+    if pre_selectors:
+        prospective = old_pop + new_inds
+        alive = np.arange(len(prospective))
+        for select in pre_selectors:
+            idx = select(None, [prospective[i].genome for i in alive.tolist()])
+            n_removed_by_pre_step.append(int(len(alive) - len(idx)))
+            alive = alive[idx]
+        old_keep = alive[alive < n_old]
+        new_keep = alive[alive >= n_old] - n_old
+        if len(old_keep) < n_old:
+            old_pop = [old_pop[i] for i in old_keep.tolist()]
+            old_payoff = old_payoff[np.ix_(old_keep, old_keep)]
+        new_inds = [new_inds[i] for i in new_keep.tolist()]
+
     pop = old_pop + new_inds
     t_create = time.time()
 
     payoff = engine.extend(
-        state.payoff,
+        old_payoff,
         [ind.genome for ind in old_pop],
         [ind.genome for ind in new_inds],
     )
     t_payoff = time.time()
-    payout_sums = payoff.sum(axis=1)  # pre-selection ground truth
+    payout_sums = payoff.sum(axis=1)  # ground truth, before selection thins it
 
     n_removed_by_step: list[int] = []
     for select in selectors:
-        idx = select(payoff)
+        idx = select(payoff, [ind.genome for ind in pop])
         n_removed_by_step.append(int(len(pop) - len(idx)))
         pop = [pop[i] for i in idx.tolist()]
         payoff = payoff[np.ix_(idx, idx)]
@@ -142,7 +167,9 @@ def _step(
         "pop_size": len(pop),
         "n_added": len(new_inds),
         "n_added_by_method": dict(Counter(ind.method for ind in new_inds)),
-        "n_removed": (n_old + len(new_inds)) - len(pop),
+        "n_removed_pre": sum(n_removed_by_pre_step),
+        "n_removed_by_pre_step": n_removed_by_pre_step,
+        "n_removed": (len(old_pop) + len(new_inds)) - len(pop),
         "n_removed_by_step": n_removed_by_step,
         "n_survived_new": len(new_surviving),
         "n_survived_new_by_method": dict(Counter(ind.method for ind in new_surviving)),
@@ -199,6 +226,7 @@ def run(cfg: RunConfig) -> None:
     creator = build_creator(cfg.experiment)
     interp = build_interpreter(cfg.experiment)
     reward = build_reward(cfg.experiment)
+    pre_selectors = build_selection(cfg.pre_selection, pre=True)
     selectors = build_selection(cfg.selection)
 
     if resuming:
@@ -213,7 +241,9 @@ def run(cfg: RunConfig) -> None:
         while state.gen < end_gen:
             gen = state.gen
             genomes = seed_genomes if gen == 0 else ()
-            state, rec = _step(state, cfg, creator, interp, engine, selectors, genomes)
+            state, rec = _step(
+                state, cfg, creator, interp, engine, selectors, pre_selectors, genomes
+            )
 
             save_payoff = None
             if cfg.payoff_every > 0 and (gen % cfg.payoff_every == 0 or gen == end_gen - 1):

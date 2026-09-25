@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from config import CapStepConfig, ExperimentConfig, SkimStepConfig
+from config import CapStepConfig, DedupeStepConfig, ExperimentConfig, SkimStepConfig
 from creation import CREATORS, build_creator
 from creation.treemo import TreemoCreator
 from interpreters import INTERPRETERS, build_interpreter
@@ -41,8 +41,9 @@ def test_build_selection_composes_steps_in_order():
     steps = build_selection([SkimStepConfig(), CapStepConfig(max_pop=5)])
     assert len(steps) == 2
     payoff = np.zeros((3, 3), dtype=int)
+    genomes = [[1], [2], [3]]
     for step in steps:
-        idx = step(payoff)
+        idx = step(payoff, genomes)
         assert idx.tolist() == [0, 1, 2]  # nothing dominated, under the cap
 
 
@@ -58,4 +59,43 @@ def test_cap_top_keeps_best_row_sums():
         [1, 0, 1],
         [1, -1, 0],
     ])
-    assert step(payoff).tolist() == [1, 2]
+    assert step(payoff, [[1], [2], [3]]).tolist() == [1, 2]
+
+
+def test_dedupe_keeps_first_occurrence_of_each_genome():
+    step = SELECTION_STEPS["dedupe"](DedupeStepConfig())
+    genomes = [[1, 2], [3], [1, 2], [3], [1, 2, 3]]
+    payoff = np.zeros((5, 5), dtype=int)
+    assert step(payoff, genomes).tolist() == [0, 1, 4]
+
+
+def test_dedupe_is_exact_match_not_payoff_match():
+    # every payoff row is identical here (an all-draws reward), so a step that
+    # keyed on payoff rows would collapse the population to one individual
+    step = SELECTION_STEPS["dedupe"](DedupeStepConfig())
+    genomes = [[1], [2], [3]]
+    payoff = np.zeros((3, 3), dtype=int)
+    assert step(payoff, genomes).tolist() == [0, 1, 2]
+    # ... and genomes that differ only in order are distinct programs
+    assert step(payoff, [[1, 2], [2, 1], [1, 2]]).tolist() == [0, 1]
+
+
+def test_dedupe_handles_empty_population():
+    step = SELECTION_STEPS["dedupe"](DedupeStepConfig())
+    idx = step(np.zeros((0, 0), dtype=int), [])
+    assert idx.tolist() == []
+    assert idx.dtype == np.dtype(int)
+
+
+def test_dedupe_works_without_a_payoff_matrix():
+    # the pre-evaluation pipeline calls steps with payoff=None
+    step = SELECTION_STEPS["dedupe"](DedupeStepConfig())
+    assert step(None, [[1], [1], [2]]).tolist() == [0, 2]
+
+
+def test_pre_selection_rejects_steps_that_read_the_payoff():
+    assert build_selection([DedupeStepConfig()], pre=True)
+    with pytest.raises(ValueError, match="pre_selection"):
+        build_selection([DedupeStepConfig(), SkimStepConfig()], pre=True)
+    with pytest.raises(ValueError, match="cap_top"):
+        build_selection([CapStepConfig()], pre=True)
