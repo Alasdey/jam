@@ -1,4 +1,5 @@
 from concurrent.futures import ProcessPoolExecutor
+import random
 from typing import Callable, List
 
 import numpy as np
@@ -47,6 +48,11 @@ class PayoffEngine:
         self.exp_cfg = exp_cfg
         self.reward = reward
         self._n_workers = exp_cfg.payoff.n_workers
+        self._chunksize = exp_cfg.payoff.chunksize
+        if self._n_workers < 1:
+            raise ValueError("payoff.n_workers must be at least 1")
+        if self._chunksize < 1:
+            raise ValueError("payoff.chunksize must be at least 1")
         self._interp = None
         self._executor = None
         if self._n_workers > 1:
@@ -76,8 +82,12 @@ class PayoffEngine:
             for i in range(len(ref))
             for j in range(len(pop))
         ]
-        chunksize = max(1, len(matchups) // (self._n_workers * 8))
-        for i, j, r in self._executor.map(_compute_single_matchup, matchups, chunksize=chunksize):
+        if self._chunksize > 1:
+            # Reproducible scheduling without consuming the evolution RNG.
+            random.Random(0).shuffle(matchups)
+        for i, j, r in self._executor.map(
+            _compute_single_matchup, matchups, chunksize=self._chunksize
+        ):
             payoff[i, j] = r
         return payoff
 

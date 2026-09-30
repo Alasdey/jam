@@ -2,8 +2,9 @@
 Score each generation's survivors against one fixed pool of codes drawn from
 the whole run, and plot score vs. generation.
 
-The pool is a plain uniform sample (without replacement) of every persisted
-birth in the run — no per-generation stratification. For each generation, a
+The pool is a uniform sample without replacement of distinct persisted
+genomes across the run. Identical code under different birth IDs counts once;
+survival across generations adds no sampling weight. For each generation, a
 `--proportion` of the survivors is sampled and scored as its mean reward
 against the pool (row = evaluated code, column = pool code). Codes that are
 both in the pool and evaluated are not special-cased.
@@ -12,8 +13,7 @@ Output: <run_dir>/score_gen_pooled.svg — a point cloud of every evaluated
 score by generation, with the per-generation mean drawn as a line.
 
 Usage:
-    python -m analysis.score_gen_pooled <run_id> --n-pool N --proportion P
-                                        [--workers W] [--seed S]
+    python -m analysis.score_gen_pooled <run_id> --n-pool N --proportion P [--workers W] [--seed S]
 
 <run_id> is either a run dir (outputs/main/20260910_181415) or its bare id
 (20260910_181415), looked up under outputs/*/.
@@ -53,6 +53,17 @@ def generations(run_dir: Path) -> list[int]:
     )
 
 
+def sample_unique_pool(births: dict[int, dict], n_pool: int, rng: random.Random) -> list[list[int]]:
+    """Sample distinct code contents, independent of birth multiplicity."""
+    unique = list(dict.fromkeys(tuple(births[i]["genome"]) for i in sorted(births)))
+    if not 1 <= n_pool <= len(unique):
+        raise ValueError(
+            f"n_pool must be between 1 and {len(unique)} distinct persisted programs; "
+            f"got {n_pool}"
+        )
+    return [list(genome) for genome in rng.sample(unique, n_pool)]
+
+
 def score_gen_pooled(
     run_dir: Path, n_pool: int, proportion: float, n_workers: int, seed: int
 ) -> tuple[list[int], list[float]]:
@@ -64,7 +75,7 @@ def score_gen_pooled(
     spec = REWARDS[exp_cfg.reward]
 
     births = load_births(str(run_dir), up_to_gen=last_gen(str(run_dir)))
-    pool = [births[i]["genome"] for i in rng.sample(sorted(births), n_pool)]
+    pool = sample_unique_pool(births, n_pool, rng)
 
     # Draw every generation's sample up front so the total work is known for the ETA.
     samples: list[tuple[int, list[int]]] = []
@@ -124,7 +135,6 @@ def plot(gens: list[int], scores: list[float], out_path: Path, title: str) -> No
     fig.savefig(out_path, format="svg")
     plt.close(fig)
 
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("run_id", help="Run dir or bare run id, e.g. 20260910_181415")
@@ -133,6 +143,8 @@ def main():
     parser.add_argument("--workers", type=int, default=1, help="Parallel processes for matchup evaluation")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
+
+
 
     run_dir = resolve_run_dir(args.run_id)
     gens, scores = score_gen_pooled(run_dir, args.n_pool, args.proportion, args.workers, args.seed)

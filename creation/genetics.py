@@ -140,15 +140,76 @@ def mutate_tree_leaf(tree: List[int], rate: float) -> List[int]:
         return tree[:idx] + [1, 1, 0, 0] + tree[idx + 2:]  # expand: [1,0] → [1,[1,0],0]
 
 
-def mutate_tree_subtree(tree: List[int], rate: float) -> List[int]:
-    """Replace a random non-root subtree with an empty leaf [1,0]."""
-    if not tree or random.random() > rate:
-        return tree
-    spans = _all_subtree_spans(tree)
+def _node_spans(tree: List[int]) -> List[tuple[int, int]]:
+    """All explicit nodes; the Dyck word's root is implicit and excluded."""
+    stack = []
+    spans = []
+    for i, token in enumerate(tree):
+        if token == 1:
+            stack.append(i)
+        else:
+            spans.append((stack.pop(), i + 1))
+    return spans
+
+
+def _child_branches(tree: List[int], node: tuple[int, int]) -> List[tuple[int, int]]:
+    start, end = node
+    return [(start + 1 + a, start + 1 + b)
+            for a, b in _subtrees_at_depth(tree[start + 1:end - 1], 0)]
+
+
+def _random_branch(size: int) -> List[int]:
+    # Local import avoids the creator/genetics module import cycle. gen_tree
+    # omits its implicit root; a branch needs that root explicitly encoded.
+    from creation.treemo import gen_tree
+    return [1] + gen_tree(size) + [0]
+
+
+def _mutate_tree_once(tree: List[int], operation: str) -> List[int]:
+    spans = _node_spans(tree)
     if not spans:
-        return tree
-    s, e = random.choice(spans)
-    return tree[:s] + [1, 0] + tree[e:]
+        return tree.copy()
+    node = random.choice(spans)
+    start, end = node
+    if operation == "delete":
+        return tree[:start] + tree[end:]
+    if operation == "insert":
+        # Empirical subtree sizes, including the whole tree's implicit root.
+        sizes = [(b - a) // 2 for a, b in spans] + [len(tree) // 2 + 1]
+        branch = _random_branch(random.choice(sizes))
+        children = _child_branches(tree, node)
+        position = random.choice([a for a, _ in children] + [end - 1])
+        return tree[:position] + branch + tree[position:]
+    if operation == "regenerate":
+        return tree[:start] + _random_branch((end - start) // 2) + tree[end:]
+    if operation == "swap":
+        eligible = [(a, b) for a, b in spans if b <= start or a >= end]
+        if not eligible:
+            return tree.copy()
+        other = random.choice(eligible)
+        left = random.choice(_child_branches(tree, node) or [(end - 1, end - 1)])
+        right = random.choice(_child_branches(tree, other) or [(other[1] - 1, other[1] - 1)])
+        (a, b), (c, d) = sorted([left, right])
+        return tree[:a] + tree[c:d] + tree[b:c] + tree[a:b] + tree[d:]
+    raise ValueError(f"Unknown tree mutation operation: {operation}")
+
+
+def mutate_tree_subtree(tree: List[int], rate: float) -> List[int]:
+    """Apply uniformly chosen delete/swap/insert/regenerate mutation events.
+
+    One Bernoulli trial per original non-root node sets the event count.
+    Each event samples nodes uniformly from the current tree. Newly inserted
+    nodes can be targets but do not increase the event budget. Empty trees
+    remain empty because their only node is the excluded implicit root.
+    """
+    if not 0 <= rate <= 1:
+        raise ValueError("mutation rate must be between 0 and 1")
+    n_events = sum(random.random() < rate for _ in range(len(tree) // 2))
+    result = tree.copy()
+    for _ in range(n_events):
+        operation = random.choice(("delete", "swap", "insert", "regenerate"))
+        result = _mutate_tree_once(result, operation)
+    return result
 
 
 def crossover_tree_depth1(tree_a: List[int], tree_b: List[int]) -> List[int]:

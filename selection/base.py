@@ -2,8 +2,9 @@ from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
 
-from config import CapStepConfig, DedupeStepConfig, NashStepConfig, SkimStepConfig
+from config import CapStepConfig, DedupeStepConfig, NashStepConfig, SkimStepConfig, LexicaseStepConfig
 from core.types import Program
+from selection.lexicase import lexicase_selection
 from selection.skim import iterated_elimination_strictly_dominated_rows_fast
 
 # A selection step maps the square self-play payoff matrix, plus the genomes of
@@ -19,7 +20,7 @@ from selection.skim import iterated_elimination_strictly_dominated_rows_fast
 # named in PAYOFF_FREE_STEPS may be used pre-evaluation.
 SelectFn = Callable[[Optional[np.ndarray], Sequence[Program]], np.ndarray]
 
-StepConfig = Union[DedupeStepConfig, SkimStepConfig, CapStepConfig, NashStepConfig]
+StepConfig = Union[DedupeStepConfig, SkimStepConfig, CapStepConfig, NashStepConfig, LexicaseStepConfig]
 
 # Steps that never read the payoff matrix, and so can run pre-evaluation.
 PAYOFF_FREE_STEPS = frozenset({"dedupe"})
@@ -59,6 +60,13 @@ def build_skim(cfg: SkimStepConfig) -> SelectFn:
     return select
 
 
+def build_lexicase(cfg: LexicaseStepConfig) -> SelectFn:
+    def select(payoff: np.ndarray, genomes: Sequence[Program]) -> np.ndarray:
+        return lexicase_selection(payoff, cfg.n_accepted)
+
+    return select
+
+
 def build_cap_top(cfg: CapStepConfig) -> SelectFn:
     def select(payoff: np.ndarray, genomes: Sequence[Program]) -> np.ndarray:
         n = payoff.shape[0]
@@ -93,6 +101,7 @@ def build_nash(cfg: NashStepConfig) -> SelectFn:
 SELECTION_STEPS: dict[str, Callable[..., SelectFn]] = {
     "dedupe": build_dedupe,
     "skim": build_skim,
+    "lexicase": build_lexicase,
     "cap_top": build_cap_top,
     "cap_random": build_cap_random,
     "nash": build_nash,

@@ -47,7 +47,9 @@ class SubleqConfig:
 @dataclass
 class PayoffConfig:
     # 1 = sequential, >1 = use ProcessPoolExecutor
-    n_workers: int = 1
+    n_workers: int = 15
+    # Matchups per batch; batches >1 use a shuffled task list.
+    chunksize: int = 2000
 
 
 # --- Selection step configs (ordered pipeline applied each generation) ---
@@ -75,6 +77,13 @@ class SkimStepConfig:
 
 
 @dataclass
+class LexicaseStepConfig:
+    kind: str = "lexicase"
+    # Number of unique survivors, selected without replacement.
+    n_accepted: int = 1_000
+
+
+@dataclass
 class CapStepConfig:
     # "cap_top" keeps the best payoff-row-sums, "cap_random" downsamples uniformly
     kind: str = "cap_top"
@@ -90,6 +99,7 @@ class NashStepConfig:
 
 @dataclass
 class GeneticsConfig:
+    # Per-integer probability for code; per-original-node event probability for trees.
     mutation_rate: float = 0.05
     crossover_prob: float = 0.5
     homoiconic_prob: float = 0.3
@@ -99,7 +109,7 @@ class GeneticsConfig:
     # ("single_point" | "two_point" | "uniform")
     code_crossover_op: str = "two_point"
 
-    # Tree operator selection ("leaf" | "subtree")
+    # "subtree": uniform delete/swap/insert/regenerate events; "leaf": legacy operator.
     tree_mutation_op: str = "subtree"
     # ("depth1" | "random_depth")
     tree_crossover_op: str = "random_depth"
@@ -150,22 +160,22 @@ class RunConfig:
     # store pop_ids whose individuals seed generation 0 (composite runs)
     seed_populations: list[str] = field(default_factory=list)
     # fresh randoms / genetic offspring injected per generation
-    n_random: int = 10**2
-    n_offspring: int = 10**2
+    n_random: int = 5*10**1
+    n_offspring: int = 2*10**2
     n_iter: int = 10**4
     # selection steps applied BEFORE payoff extension, on genomes alone: they
     # thin the prospective population so the dropped individuals never cost a
     # matchup. Only payoff-free steps may go here (selection.base validates).
     pre_selection: list = field(default_factory=lambda: [DedupeStepConfig()])
     # ordered selection pipeline applied after payoff extension each generation
-    selection: list = field(default_factory=lambda: [SkimStepConfig(), CapStepConfig()])
+    selection: list = field(default_factory=lambda: [LexicaseStepConfig()]) # SkimStepConfig(), CapStepConfig()
     # persist payoffs/payoff_XXXXXX.npz every N generations + final (0 = never)
     payoff_every: int = 10*3
     # False: persist only newborns that survive their birth generation
     log_all_births: bool = False
     # path to a previous run's out_dir to continue (runs n_iter MORE generations)
-    # resume_from: Optional[str] = "outputs/main/20260719_173059" # None
-    resume_from: Optional[str] = None
+    resume_from: Optional[str] = "outputs/main/20260929_164051" # None
+    # resume_from: Optional[str] = None
     # if set, publish the final population to the store under this label
     publish_label: Optional[str] = 'initial_test'
     store_dir: str = "outputs/store/populations"
@@ -213,5 +223,3 @@ PRESETS: dict[str, Callable[[], RunConfig]] = {
     "evolution": preset_evolution,
     "random_skimmed": preset_random_skimmed,
 }
-
-

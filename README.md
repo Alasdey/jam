@@ -41,7 +41,7 @@ uv run pytest                          # test suite
 | `creation/` | Program creators — random init, mutation, crossover, homoiconic recombination; `CREATORS` registry |
 | `interpreters/` | Interpreter implementations (Subleq, IconFracTran, Treemo); `INTERPRETERS` registry |
 | `rewards/` | Reward functions (`REWARDS` registry, `RewardSpec.zero_sum`) and `PayoffEngine` |
-| `selection/` | Selection steps (`SELECTION_STEPS`: dedupe, skim, cap_top, cap_random, nash) composed into a pipeline |
+| `selection/` | Selection steps (`SELECTION_STEPS`: dedupe, skim, lexicase, cap_top, cap_random, nash) composed into a pipeline |
 | `store/` | Population store (`store.publish`) and cross-population tournaments (`store.tournament`) |
 | `sides/` | `random_baseline.py` — random-pool baseline with a fixed reference population |
 | `loggers/` | `ExperimentLogger` (write side) and `run_io` (read side) of the run-directory format |
@@ -78,7 +78,11 @@ Selected via `ExperimentConfig.reward`: `blind | placeholder | quine_pressure`.
 `rewards/payoff.py` provides `PayoffEngine` — the single choke point through
 which both the evolution loop and the tournament tool evaluate matchups.
 `matrix(ref, pop)` computes a payoff block (in parallel when
-`PayoffConfig.n_workers > 1`, with the worker pool reused across generations);
+`PayoffConfig.n_workers > 1`, with the worker pool reused across generations).
+`PayoffConfig.chunksize` controls how many matchup tasks are submitted to a
+worker at once; use `1` for the finest load balancing when matchup costs vary.
+For chunks larger than one, the matchup list is shuffled reproducibly before
+batching, using a separate RNG so scheduling does not affect evolution randomness.
 `extend(payoff, old, new)` grows the square self-play matrix, deriving the
 reverse block as `-A.T` when `RewardSpec.zero_sum` allows it.
 
@@ -104,15 +108,18 @@ Only steps in `selection.base.PAYOFF_FREE_STEPS` may go in `pre_selection`;
 | `skim` | `SkimStepConfig(n_rounds, fraction, n_accepted)` | Iterated elimination of strictly dominated strategies (`selection/skim.py`; the non-`_fast` variant is kept for reference — it compares over all columns instead of the symmetric active set). `fraction` controls what share of the dominated set is dropped per round; skimming stops early below `n_accepted`. |
 | `cap_top` | `CapStepConfig(max_pop)` | Keep the `max_pop` best payoff row-sums. |
 | `cap_random` | `CapStepConfig(kind="cap_random", max_pop)` | Uniform random downsample to `max_pop`. |
+| `lexicase` | `LexicaseStepConfig(n_accepted=1_000)` | Select up to `n_accepted` unique survivors without replacement. Each pick shuffles opponent columns and filters to the exact highest payoff among remaining candidates on each case, breaking final ties uniformly. All original opponent columns remain available for every pick. Uses bitsets over identical payoff rows when each case has at most eight distinct scores; otherwise falls back to array filtering. Both paths preserve individual tie probabilities and the original RNG stream. |
 | `nash` | `NashStepConfig()` | Union of Nash-equilibrium supports via `nashpy` (`selection/nash_set.py`). Support enumeration is exponential — small populations only. |
 
 ## Genetic operators (`creation/genetics.py`)
+
+For `subtree`, each original non-root node contributes an independent trial with probability `mutation_rate`; the successful trials set the number of mutation events. Each event chooses one of four operations uniformly and samples its target uniformly from the current non-root nodes. Delete removes a whole subtree. Swap exchanges child branches between unrelated nodes (an empty branch is used for a childless node); if no second node is eligible, the event is skipped. Insert attaches a random subtree whose size is sampled from the current tree’s empirical subtree-size distribution, including the implicit root. Regenerate replaces the selected subtree with a random tree of the same size. The implicit root is never edited, so an empty tree stays empty. Insertions do not increase the event budget. Operations may leave a genome unchanged, for example regenerating a leaf. Standalone random creation is separate and still uses `tree_size`. SUBLEQ and other integer programs retain independent per-integer mutation probabilities.
 
 | Category | Options |
 |---|---|
 | Code mutation (`code_mutation_op`) | `uniform` (replace gene w.p. `mutation_rate`), `creep` (nudge gene by ±delta) |
 | Code crossover (`code_crossover_op`) | `single_point`, `two_point`, `uniform` |
-| Tree mutation (`tree_mutation_op`) | `leaf`, `subtree` |
+| Tree mutation (`tree_mutation_op`) | `subtree`: uniform delete, swap, insert, or regenerate; `leaf`: legacy leaf-only mutation |
 | Tree crossover (`tree_crossover_op`) | `depth1`, `random_depth` |
 | Homoiconic recombination | `output` (child = parent A's output when run on B), `memory` (child = resulting memory/state) |
 

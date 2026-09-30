@@ -9,6 +9,7 @@ rewards/*
 libsubleq.so
 outputs*
 analysis/out/
+.claude/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -72,11 +72,13 @@ def test_extend_computes_reverse_block_when_not_zero_sum():
         assert not np.array_equal(extended[3:, :3], -extended[:3, 3:].T)
 
 
-def test_parallel_matches_sequential():
+@pytest.mark.parametrize("chunksize", [1, 3, 8])
+def test_parallel_matches_sequential(chunksize):
     ref = _programs(4, seed=59)
     pop = _programs(4, seed=61)
     seq_cfg = _cfg(n_workers=1)
     par_cfg = _cfg(n_workers=2)
+    par_cfg.payoff.chunksize = chunksize
     with PayoffEngine(seq_cfg, build_reward(seq_cfg)) as seq:
         expected = seq.matrix(ref, pop)
     with PayoffEngine(par_cfg, build_reward(par_cfg)) as par:
