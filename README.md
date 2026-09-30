@@ -152,6 +152,30 @@ interrupted run reproduces the uninterrupted one bit-for-bit). Runs write
 births/survivors deltas, optional payoff matrices (`payoff_every`); see
 [docs/formats.md](docs/formats.md).
 
+To restart from the survivors **after** a particular generation, set these
+fields in `RunConfig` in `config.py`, then run `python main.py`:
+
+```python
+resume_from: Optional[str] = "outputs/main/20260929_164051"
+resume_gen: Optional[int] = 399
+```
+
+This continues at generation **400** for `n_iter` additional generations, in the
+same directory. It reconstructs the recorded population, reuses a compatible
+payoff snapshot or recomputes the matrix, and preserves the ID high-water mark.
+It does **not** seed or restore either RNG; exact historical replay is not required.
+Before changing history it makes a complete backup in a hidden sibling directory
+named `.<run>.before_gen_<generation>_<suffix>` (also printed and recorded in the
+resume metadata). Metrics and population/payoff files after the selected generation
+are removed from the active run, and its checkpoint is replaced before evolution
+continues. Reconstruction or evaluation failures leave the original run unchanged.
+Run this with the previous process stopped.
+
+`resume_gen` defaults to `None`, preserving latest-checkpoint resume behavior.
+Set it back to `None` after the restart; leaving `399` configured requests another
+restart from 399 on every launch. `resume_gen` requires `resume_from` and a saved,
+non-negative generation. No extra per-generation RNG checkpoints are stored.
+
 ## Comparing methodologies (population store + tournaments)
 
 Rewards are relative — an individual's score only means something against its

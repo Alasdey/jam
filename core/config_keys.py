@@ -55,7 +55,7 @@ def method_key(run_cfg_dict: dict) -> str:
     Hash identifying a methodology: the full run config minus run identity
     (seed, paths). Same-methodology samples across seeds share this key.
     """
-    excluded = ("seed", "out_dir", "resume_from", "publish_label", "store_dir")
+    excluded = ("seed", "out_dir", "resume_from", "resume_gen", "publish_label", "store_dir")
     payload = {k: v for k, v in run_cfg_dict.items() if k not in excluded}
     return _canonical_hash(payload)
 

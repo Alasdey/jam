@@ -27,6 +27,9 @@ def _exp() -> ExperimentConfig:
 
 
 def _cfg(out_dir, seed=123, n_iter=5, **kw) -> RunConfig:
+    # Test runs must not inherit the user's configured resume/publish target.
+    kw.setdefault("resume_from", None)
+    kw.setdefault("publish_label", None)
     return RunConfig(
         seed=seed,
         n_random=5,
@@ -134,6 +137,8 @@ def test_payoff_matrices_persisted_periodically_and_at_end(tmp_path):
 @pytest.mark.parametrize("name", sorted(PRESETS))
 def test_presets_smoke(tmp_path, name):
     cfg = PRESETS[name]()
+    cfg.resume_from = None
+    cfg.publish_label = None
     cfg.experiment = _exp()
     cfg.seed = 5
     cfg.n_iter = 2

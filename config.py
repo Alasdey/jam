@@ -176,6 +176,9 @@ class RunConfig:
     # path to a previous run's out_dir to continue (runs n_iter MORE generations)
     resume_from: Optional[str] = "outputs/main/20260929_164051" # None
     # resume_from: Optional[str] = None
+    # Restore survivors AFTER this generation; continue at resume_gen + 1.
+    # None resumes the latest checkpoint. Explicit generations do not reset RNGs.
+    resume_gen: Optional[int] = 398 # None
     # if set, publish the final population to the store under this label
     publish_label: Optional[str] = 'initial_test'
     store_dir: str = "outputs/store/populations"

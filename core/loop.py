@@ -18,6 +18,7 @@ touching this module.
 
 import json
 import os
+import operator
 import random
 import time
 from collections import Counter
@@ -35,7 +36,8 @@ from creation.base import Creator
 from creation.offspring import make_offspring
 from interpreters import build_interpreter
 from loggers.experiment_logger import ExperimentLogger
-from loggers.run_io import load_checkpoint, reconstruct_population
+from loggers.run_io import last_gen, load_births, load_checkpoint, reconstruct_population
+from loggers.rewind import rewind_run
 from rewards.base import build_reward
 from rewards.payoff import PayoffEngine
 from selection.base import SelectFn, build_selection
@@ -192,6 +194,9 @@ def _resume_state(cfg: RunConfig) -> RunState:
             f"current config gives {current_key}"
         )
 
+    if cfg.resume_gen is not None:
+        return _resume_generation_state(cfg, saved)
+
     checkpoint = load_checkpoint(cfg.out_dir)
     records = reconstruct_population(cfg.out_dir)
     record_ids = [r["id"] for r in records]
@@ -207,8 +212,72 @@ def _resume_state(cfg: RunConfig) -> RunState:
     return RunState(checkpoint["gen"], checkpoint["next_id"], pop, checkpoint["payoff"])
 
 
+
+def _resume_generation_state(cfg: RunConfig, saved: dict) -> RunState:
+    """Rebuild a historical population without changing either global RNG."""
+    root = Path(cfg.out_dir)
+    records = reconstruct_population(cfg.out_dir, cfg.resume_gen)
+    ids = [r["id"] for r in records]
+    pop = [Individual(r["id"], r["genome"], r["method"], r["parents"], r["born_gen"])
+           for r in records]
+
+    # Preserve the ID high-water mark, including births discarded by rollback.
+    births = load_births(cfg.out_dir, last_gen(cfg.out_dir))
+    next_id = max(births, default=-1) + 1
+    if (root / "checkpoint.pkl").exists():
+        next_id = max(next_id, load_checkpoint(cfg.out_dir)["next_id"])
+
+    # Old snapshots have no embedded reward/config provenance. Only reuse one
+    # when every recorded invocation agrees on payoff semantics.
+    configs = [saved]
+    for path in root.glob("config_resumed_*.json"):
+        with open(path) as f:
+            configs.append(json.load(f))
+    current_key = compat_key(asdict(cfg.experiment))
+    reusable = all(
+        c["experiment"]["reward"] == cfg.experiment.reward
+        and compat_key(c["experiment"]) == current_key for c in configs
+    )
+    path = root / "payoffs" / f"payoff_{cfg.resume_gen:06d}.npz"
+    if path.exists() and reusable:
+        with np.load(path, allow_pickle=False) as data:
+            payoff = data["payoff"]
+            if data["ids"].tolist() != ids:
+                raise ValueError("Historical payoff IDs do not match survivors")
+        if payoff.shape != (len(pop), len(pop)) or not np.isfinite(payoff).all():
+            raise ValueError("Historical payoff must be a finite square survivor matrix")
+    else:
+        genomes = [ind.genome for ind in pop]
+        with PayoffEngine(cfg.experiment, build_reward(cfg.experiment)) as engine:
+            payoff = engine.matrix(genomes, genomes)
+    return RunState(cfg.resume_gen + 1, next_id, pop, payoff)
+
+
+def _checkpoint(state: RunState) -> dict:
+    return {
+        "format_version": 1,
+        "gen": state.gen,
+        "next_id": state.next_id,
+        "pop_ids": [ind.id for ind in state.pop],
+        "payoff": state.payoff,
+        "py_random_state": random.getstate(),
+        "np_random_state": np.random.get_state(),
+    }
+
+
 def run(cfg: RunConfig) -> None:
     resuming = bool(cfg.resume_from)
+    if cfg.resume_gen is not None:
+        if not resuming:
+            raise ValueError("resume_gen requires resume_from")
+        if isinstance(cfg.resume_gen, bool):
+            raise ValueError("resume_gen must be a non-negative integer")
+        try:
+            cfg.resume_gen = operator.index(cfg.resume_gen)
+        except TypeError as exc:
+            raise ValueError("resume_gen must be a non-negative integer") from exc
+        if cfg.resume_gen < 0:
+            raise ValueError("resume_gen must be a non-negative integer")
 
     seed_genomes: list[Program] = []
     meta_extra: dict = {}
@@ -234,6 +303,11 @@ def run(cfg: RunConfig) -> None:
     else:
         state = RunState(gen=0, next_id=0, pop=[], payoff=np.zeros((0, 0), dtype=int))
 
+    if cfg.resume_gen is not None:
+        backup = rewind_run(cfg.out_dir, cfg.resume_gen, _checkpoint(state))
+        meta_extra["rollback_backup"] = str(backup)
+        print(f"Restored generation {cfg.resume_gen}; backup: {backup}")
+
     logger = ExperimentLogger(cfg.out_dir, cfg, **meta_extra)
     end_gen = state.gen + cfg.n_iter
 
@@ -251,15 +325,7 @@ def run(cfg: RunConfig) -> None:
             logger.log_generation(
                 gen, rec.metrics, rec.births, rec.survivor_ids, rec.scores, save_payoff
             )
-            logger.write_checkpoint({
-                "format_version": 1,
-                "gen": state.gen,
-                "next_id": state.next_id,
-                "pop_ids": rec.survivor_ids,
-                "payoff": state.payoff,
-                "py_random_state": random.getstate(),
-                "np_random_state": np.random.get_state(),
-            })
+            logger.write_checkpoint(_checkpoint(state))
 
             m = rec.metrics
             print(

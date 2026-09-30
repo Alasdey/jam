@@ -12,6 +12,17 @@ import numpy as np
 from core.types import Individual
 
 
+def write_checkpoint(out_dir: Path, blob: dict[str, Any]) -> None:
+    """Atomically replace the current resume state."""
+    tmp = out_dir / "checkpoint.pkl.tmp"
+    try:
+        with open(tmp, "wb") as f:
+            pickle.dump(blob, f)
+        os.replace(tmp, out_dir / "checkpoint.pkl")
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def _git_hash() -> str:
     try:
         return subprocess.check_output(
@@ -99,7 +110,4 @@ class ExperimentLogger:
             )
 
     def write_checkpoint(self, blob: dict[str, Any]) -> None:
-        tmp = self.out_dir / "checkpoint.pkl.tmp"
-        with open(tmp, "wb") as f:
-            pickle.dump(blob, f)
-        os.replace(tmp, self.out_dir / "checkpoint.pkl")
+        write_checkpoint(self.out_dir, blob)

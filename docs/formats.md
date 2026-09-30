@@ -51,6 +51,25 @@ returns. Set `log_all_births=True` to also keep immediately-culled newborns
 - `seeded_provenance` (composite runs): list of `"<pop_id>/<original_id>"`;
   entry i describes the seeded individual with local id i.
 
+## Restarting from a historical generation
+
+`RunConfig.resume_gen=N` with `resume_from` restores the population recorded in
+`survivors_N` and starts the next generation at `N+1`. A compatible `payoff_N.npz`
+is reused after validating its IDs and shape; if absent or recorded reward/config
+history makes reuse uncertain, the current reward/interpreter recomputes the matrix.
+Python and NumPy RNGs are neither reseeded nor restored on this path. New individual
+IDs stay above all recorded births and the previous checkpoint's `next_id`.
+
+The run is fully copied to a hidden sibling `.<run>.before_gen_<N>_<suffix>` before
+any history is changed. Later births, survivors, payoff snapshots, and metric rows
+are removed from the active directory, and `checkpoint.pkl` is replaced with the
+reconstructed state. Resume metadata records `rollback_backup`. The backup is kept;
+ordinary I/O failures during rewriting restore it automatically, and it can also be
+used for recovery after a process interruption. Original config/meta files and
+history through N are retained. Previously generated analysis plots are not updated.
+
+`resume_gen=None` still resumes the latest checkpoint and restores its RNG state.
+
 ## Config keys
 
 Defined in `core/config_keys.py`:
@@ -61,7 +80,7 @@ Defined in `core/config_keys.py`:
   (they shape creation, not play). `treemo` and `treemo_py` are deliberately
   distinct until the implementations are proven equivalent.
 - `method_key(run_config_dict)` — sha256[:12] of the RunConfig minus run
-  identity (`seed`, `out_dir`, `resume_from`, `publish_label`, `store_dir`).
+  identity (`seed`, `out_dir`, `resume_from`, `resume_gen`, `publish_label`, `store_dir`).
   Samples of the same methodology across seeds share this key.
 
 ## Population store — `outputs/store/populations/<pop_id>/`
