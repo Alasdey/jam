@@ -88,13 +88,17 @@ def score_gen_pooled(
 
     gens: list[int] = []
     scores: list[float] = []
+    score_by_code: dict[tuple[int, ...], float] = {}
     t0 = time.time()
     with PayoffEngine(exp_cfg, spec) as engine:
         for gen, ids in samples:
-            evaluated = [births[i]["genome"] for i in ids]
-            gen_scores = engine.matrix(evaluated, pool).mean(axis=1)
+            keys = [tuple(births[i]["genome"]) for i in ids]
+            uncached = list(dict.fromkeys(key for key in keys if key not in score_by_code))
+            if uncached:
+                new_scores = engine.matrix([list(key) for key in uncached], pool).mean(axis=1)
+                score_by_code.update(zip(uncached, new_scores.tolist()))
             gens.extend([gen] * len(ids))
-            scores.extend(gen_scores.tolist())
+            scores.extend(score_by_code[key] for key in keys)
             print_progress(gen, len(scores), total, time.time() - t0)
     print()
     return gens, scores
