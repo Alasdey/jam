@@ -2,7 +2,7 @@ from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
 
-from config import CapStepConfig, DedupeStepConfig, NashStepConfig, SkimStepConfig, LexicaseStepConfig
+from config import CapStepConfig, DedupeStepConfig, MaxLengthStepConfig, NashStepConfig, SkimStepConfig, LexicaseStepConfig
 from core.types import Program
 from selection.lexicase import lexicase_selection
 from selection.skim import iterated_elimination_strictly_dominated_rows_fast
@@ -20,10 +20,10 @@ from selection.skim import iterated_elimination_strictly_dominated_rows_fast
 # named in PAYOFF_FREE_STEPS may be used pre-evaluation.
 SelectFn = Callable[[Optional[np.ndarray], Sequence[Program]], np.ndarray]
 
-StepConfig = Union[DedupeStepConfig, SkimStepConfig, CapStepConfig, NashStepConfig, LexicaseStepConfig]
+StepConfig = Union[DedupeStepConfig, MaxLengthStepConfig, SkimStepConfig, CapStepConfig, NashStepConfig, LexicaseStepConfig]
 
 # Steps that never read the payoff matrix, and so can run pre-evaluation.
-PAYOFF_FREE_STEPS = frozenset({"dedupe"})
+PAYOFF_FREE_STEPS = frozenset({"dedupe", "max_length"})
 
 
 def build_dedupe(cfg: DedupeStepConfig) -> SelectFn:
@@ -36,6 +36,19 @@ def build_dedupe(cfg: DedupeStepConfig) -> SelectFn:
                 seen.add(key)
                 keep.append(i)
         return np.array(keep, dtype=int)
+
+    return select
+
+
+def build_max_length(cfg: MaxLengthStepConfig) -> SelectFn:
+    if cfg.max_length < 0:
+        raise ValueError("max_length must be non-negative")
+
+    def select(payoff: Optional[np.ndarray], genomes: Sequence[Program]) -> np.ndarray:
+        return np.array(
+            [i for i, genome in enumerate(genomes) if len(genome) <= cfg.max_length],
+            dtype=int,
+        )
 
     return select
 
@@ -100,6 +113,7 @@ def build_nash(cfg: NashStepConfig) -> SelectFn:
 
 SELECTION_STEPS: dict[str, Callable[..., SelectFn]] = {
     "dedupe": build_dedupe,
+    "max_length": build_max_length,
     "skim": build_skim,
     "lexicase": build_lexicase,
     "cap_top": build_cap_top,

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from config import CapStepConfig, DedupeStepConfig, ExperimentConfig, SkimStepConfig
+from config import CapStepConfig, DedupeStepConfig, ExperimentConfig, MaxLengthStepConfig, SkimStepConfig
 from creation import CREATORS, build_creator
 from creation.treemo import TreemoCreator
 from interpreters import INTERPRETERS, build_interpreter
@@ -99,3 +99,14 @@ def test_pre_selection_rejects_steps_that_read_the_payoff():
         build_selection([DedupeStepConfig(), SkimStepConfig()], pre=True)
     with pytest.raises(ValueError, match="cap_top"):
         build_selection([CapStepConfig()], pre=True)
+
+
+def test_max_length_keeps_codes_at_or_below_limit_without_payoff():
+    step, = build_selection([MaxLengthStepConfig(max_length=2)], pre=True)
+    assert step(None, [[], [1], [1, 2], [1, 2, 3]]).tolist() == [0, 1, 2]
+    assert step(None, []).tolist() == []
+
+
+def test_max_length_rejects_negative_limit():
+    with pytest.raises(ValueError, match="max_length"):
+        build_selection([MaxLengthStepConfig(max_length=-1)])

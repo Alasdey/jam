@@ -66,6 +66,12 @@ class DedupeStepConfig:
 
 
 @dataclass
+class MaxLengthStepConfig:
+    max_length: int
+    kind: str = "max_length"
+
+
+@dataclass
 class SkimStepConfig:
     kind: str = "skim"
     # rounds of iterated elimination of strictly dominated strategies
@@ -101,7 +107,7 @@ class NashStepConfig:
 class GeneticsConfig:
     # Per-integer probability for code; per-original-node event probability for trees.
     mutation_rate: float = 0.05
-    crossover_prob: float = 0.5
+    crossover_prob: float = 0.8
     homoiconic_prob: float = 0.3
 
     # Integer-program operator selection ("uniform" | "creep")
@@ -160,25 +166,25 @@ class RunConfig:
     # store pop_ids whose individuals seed generation 0 (composite runs)
     seed_populations: list[str] = field(default_factory=list)
     # fresh randoms / genetic offspring injected per generation
-    n_random: int = 5*10**1
-    n_offspring: int = 2*10**2
+    n_random: int = 1*10**2
+    n_offspring: int = 9*10**2
     n_iter: int = 10**4
     # selection steps applied BEFORE payoff extension, on genomes alone: they
     # thin the prospective population so the dropped individuals never cost a
     # matchup. Only payoff-free steps may go here (selection.base validates).
-    pre_selection: list = field(default_factory=lambda: [DedupeStepConfig()])
+    pre_selection: list = field(default_factory=lambda: [MaxLengthStepConfig(max_length=10000), DedupeStepConfig()])
     # ordered selection pipeline applied after payoff extension each generation
-    selection: list = field(default_factory=lambda: [LexicaseStepConfig()]) # SkimStepConfig(), CapStepConfig()
+    selection: list = field(default_factory=lambda: [LexicaseStepConfig(n_accepted=200)]) # SkimStepConfig(), CapStepConfig()
     # persist payoffs/payoff_XXXXXX.npz every N generations + final (0 = never)
     payoff_every: int = 10*3
     # False: persist only newborns that survive their birth generation
     log_all_births: bool = False
     # path to a previous run's out_dir to continue (runs n_iter MORE generations)
-    resume_from: Optional[str] = "outputs/main/20260929_164051" # None
+    resume_from: Optional[str] = "outputs/main/20261001_151539" # "outputs/main/20260929_164051" # None
     # resume_from: Optional[str] = None
     # Restore survivors AFTER this generation; continue at resume_gen + 1.
     # None resumes the latest checkpoint. Explicit generations do not reset RNGs.
-    resume_gen: Optional[int] = 398 # None
+    resume_gen: Optional[int] = None
     # if set, publish the final population to the store under this label
     publish_label: Optional[str] = 'initial_test'
     store_dir: str = "outputs/store/populations"
