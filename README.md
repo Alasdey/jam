@@ -220,3 +220,4 @@ can seed generation 0 from stored populations via `RunConfig.seed_populations`.
   [interpreters/treemo_c/README.md](interpreters/treemo_c/README.md)).
 - Matchup-result caching in `PayoffEngine.matrix` once matchup cost dominates
   (see the deferred-seams section of [docs/formats.md](docs/formats.md)).
+- Maximal Loteries as selection
