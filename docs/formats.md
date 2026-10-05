@@ -128,8 +128,13 @@ ratings.json         derived; regenerate any time with `store.tournament ratings
   member) are computed; existing block files are never rewritten.
 - Cross blocks only by default; `--self` also computes self-play blocks
   (excluded from ratings either way).
-- `ratings.json`: per population `mean_payoff`, `win_rate`, `n_matchups`
-  and a `per_opponent` breakdown, ranked by mean_payoff. Ratings are relative
+- `ratings.json`: per population `mean_payoff`, `min_payoff`, `max_payoff`,
+  `win_rate`, `min_win_rate`, `max_win_rate`, `n_matchups` and a `per_opponent`
+  breakdown with the same statistics, ranked by mean_payoff. Min/max range
+  over individual programs' average payoff and win rate against the relevant
+  opponent pool. Overall statistics pool all opponent individuals, weighting
+  populations by their sizes; draws count as non-wins. Statistics are zero
+  when there are no evaluated matchups. Ratings are relative
   to the member pool — the raw blocks are the ground truth; re-derive after
   every membership change.
 

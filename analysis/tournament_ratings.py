@@ -4,6 +4,7 @@ Derive per-population ratings from a tournament's stored payoff blocks.
 Consumes only blocks/*.npz + tournament.json, so alternative rating schemes
 (Elo, Nash averaging) can be added later as sibling functions over the same
 artifacts. Self-play blocks are excluded from ratings by design.
+Min/max statistics range over individual programs' mean payoffs and win rates.
 """
 
 import json
@@ -40,25 +41,28 @@ def compute_ratings(tournament_dir: str) -> dict:
     populations = {}
     for pop in members:
         per_opponent = {}
-        total_sum = 0.0
-        total_wins = 0
-        total_matchups = 0
+        individual_sums = None
+        individual_wins = None
+        n_opponents = 0
         for opponent in members:
             if opponent == pop:
                 continue
             block = load_block(tournament_dir, pop, opponent, doc["zero_sum"])
-            per_opponent[opponent] = {
-                "mean_payoff": round(float(block.mean()), 4),
-                "win_rate": round(float((block > 0).mean()), 4),
-                "n_matchups": int(block.size),
-            }
-            total_sum += float(block.sum())
-            total_wins += int((block > 0).sum())
-            total_matchups += block.size
+            row_sums = block.sum(axis=1, dtype=np.float64)
+            row_wins = (block > 0).sum(axis=1)
+            per_opponent[opponent] = _summarize(row_sums, row_wins, block.shape[1])
+            if individual_sums is None:
+                individual_sums = row_sums
+                individual_wins = row_wins
+            else:
+                individual_sums += row_sums
+                individual_wins += row_wins
+            n_opponents += block.shape[1]
+        if individual_sums is None:
+            individual_sums = np.empty(0)
+            individual_wins = np.empty(0)
         populations[pop] = {
-            "mean_payoff": round(total_sum / total_matchups, 4) if total_matchups else 0.0,
-            "win_rate": round(total_wins / total_matchups, 4) if total_matchups else 0.0,
-            "n_matchups": total_matchups,
+            **_summarize(individual_sums, individual_wins, n_opponents),
             "per_opponent": per_opponent,
         }
 
@@ -71,6 +75,32 @@ def compute_ratings(tournament_dir: str) -> dict:
         "reward": doc["reward"],
         "computed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "populations": ranked,
+    }
+
+
+def _summarize(row_sums: np.ndarray, row_wins: np.ndarray, n_opponents: int) -> dict:
+    """Summarize individuals against a common opponent pool, weighted by matchups."""
+    n_matchups = len(row_sums) * n_opponents
+    if n_matchups:
+        payoffs = row_sums / n_opponents
+        win_rates = row_wins / n_opponents
+        return {
+            "mean_payoff": round(float(row_sums.sum()) / n_matchups, 4),
+            "min_payoff": round(float(payoffs.min()), 4),
+            "max_payoff": round(float(payoffs.max()), 4),
+            "win_rate": round(float(row_wins.sum()) / n_matchups, 4),
+            "min_win_rate": round(float(win_rates.min()), 4),
+            "max_win_rate": round(float(win_rates.max()), 4),
+            "n_matchups": n_matchups,
+        }
+    return {
+        "mean_payoff": 0.0,
+        "min_payoff": 0.0,
+        "max_payoff": 0.0,
+        "win_rate": 0.0,
+        "min_win_rate": 0.0,
+        "max_win_rate": 0.0,
+        "n_matchups": 0,
     }
 
 

@@ -199,8 +199,9 @@ uv run python -m store.tournament ratings --dir outputs/store/tournaments/quine_
 Adding a population computes only the missing cross-population blocks, so
 evaluating a new methodology against the existing pool is incremental. Only
 populations with the same `compat_key` (interpreter + its settings) can meet;
-ratings (mean payoff / win-rate, per-opponent breakdown) are always relative
-to the member pool — the raw blocks are the stable artifact. Composite runs
+ratings (mean payoff / win-rate, individual min/max for both, per-opponent
+breakdown) are always relative to the member pool — the raw blocks are the
+stable artifact. Composite runs
 can seed generation 0 from stored populations via `RunConfig.seed_populations`.
 
 ## Analysis

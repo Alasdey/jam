@@ -189,11 +189,20 @@ def main():
         from analysis.tournament_ratings import write_ratings
 
         ratings = write_ratings(args.dir)
-        header = f"{'pop_id':<50} {'mean_payoff':>12} {'win_rate':>9} {'n_matchups':>11}"
+        metrics = (
+            "mean_payoff", "min_payoff", "max_payoff",
+            "win_rate", "min_win_rate", "max_win_rate",
+        )
+        header = (
+            f"{'pop_id':<50} "
+            + " ".join(f"{name:>12}" for name in metrics)
+            + f" {'n_matchups':>11}"
+        )
         print(header)
         print("-" * len(header))
         for pop_id, r in ratings["populations"].items():
-            print(f"{pop_id:<50} {r['mean_payoff']:>12.4f} {r['win_rate']:>9.4f} {r['n_matchups']:>11}")
+            values = " ".join(f"{r[name]:>12.4f}" for name in metrics)
+            print(f"{pop_id:<50} {values} {r['n_matchups']:>11}")
 
 
 if __name__ == "__main__":

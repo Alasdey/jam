@@ -150,10 +150,90 @@ def test_ratings_on_hand_built_blocks(tmp_path):
     assert pops["a"]["per_opponent"]["b"]["n_matchups"] == 6
 
 
+def test_ratings_extrema_use_individual_scores_and_weight_opponents(tmp_path):
+    tdir = tmp_path / "t"
+    (tdir / "blocks").mkdir(parents=True)
+    (tdir / "tournament.json").write_text(json.dumps({
+        "format_version": 1, "tournament_id": "t", "reward": "placeholder",
+        "zero_sum": True, "members": ["a", "b", "c"],
+    }))
+    blocks = {
+        ("a", "b"): [[1], [-1]],
+        ("a", "c"): [[-1, -1, 0], [1, 1, 0]],
+        ("b", "c"): [[1, 0, -1]],
+    }
+    for (row_pop, col_pop), values in blocks.items():
+        payoff = np.array(values, dtype=np.int32)
+        np.savez(
+            tdir / "blocks" / f"{row_pop}__vs__{col_pop}.npz",
+            payoff=payoff,
+            row_ids=np.arange(payoff.shape[0]),
+            col_ids=np.arange(payoff.shape[1]),
+        )
+
+    pops = compute_ratings(str(tdir))["populations"]
+    # Each a program plays one b and three c programs. Pool those four
+    # matchups before taking extrema; do not average the opponent summaries.
+    assert {key: value for key, value in pops["a"].items() if key != "per_opponent"} == {
+        "mean_payoff": 0.0, "min_payoff": -0.25, "max_payoff": 0.25,
+        "win_rate": 0.375, "min_win_rate": 0.25, "max_win_rate": 0.5,
+        "n_matchups": 8,
+    }
+    assert pops["a"]["per_opponent"]["c"] == {
+        "mean_payoff": 0.0, "min_payoff": -0.6667, "max_payoff": 0.6667,
+        "win_rate": 0.3333, "min_win_rate": 0.0, "max_win_rate": 0.6667,
+        "n_matchups": 6,
+    }
+    # Reverse zero-sum orientation uses columns of the stored a-vs-c block.
+    # Every c program's mean payoff is zero despite individual wins/losses.
+    assert pops["c"]["per_opponent"]["a"] == {
+        "mean_payoff": 0.0, "min_payoff": 0.0, "max_payoff": 0.0,
+        "win_rate": 0.3333, "min_win_rate": 0.0, "max_win_rate": 0.5,
+        "n_matchups": 6,
+    }
+    assert pops["c"]["min_payoff"] == -0.3333
+    assert pops["c"]["max_payoff"] == 0.3333
+    assert pops["c"]["min_win_rate"] == 0.3333
+    assert pops["c"]["max_win_rate"] == 0.3333
+
+
+@pytest.mark.parametrize("members", [["a"], ["a", "b"]])
+def test_ratings_without_cross_population_matchups_are_zero(tmp_path, members):
+    tdir = tmp_path / "t"
+    (tdir / "blocks").mkdir(parents=True)
+    (tdir / "tournament.json").write_text(json.dumps({
+        "format_version": 1, "tournament_id": "t", "reward": "placeholder",
+        "zero_sum": True, "members": members,
+    }))
+    # Self-play must remain excluded even when it is the only evaluated block.
+    np.savez(
+        tdir / "blocks" / "a__vs__a.npz",
+        payoff=np.array([[0, 1], [-1, 0]], dtype=np.int32),
+        row_ids=np.arange(2), col_ids=np.arange(2),
+    )
+    if len(members) > 1:
+        np.savez(
+            tdir / "blocks" / "a__vs__b.npz",
+            payoff=np.empty((2, 0), dtype=np.int32),
+            row_ids=np.arange(2), col_ids=np.arange(0),
+        )
+
+    expected = {
+        "mean_payoff": 0.0, "min_payoff": 0.0, "max_payoff": 0.0,
+        "win_rate": 0.0, "min_win_rate": 0.0, "max_win_rate": 0.0,
+        "n_matchups": 0,
+    }
+    for pop in compute_ratings(str(tdir))["populations"].values():
+        assert {key: value for key, value in pop.items() if key != "per_opponent"} == expected
+        for opponent in pop["per_opponent"].values():
+            assert opponent == expected
+
+
 def test_ratings_end_to_end_antisymmetric(arena):
     _, tdir, pop_a, pop_b = arena
     ratings = write_ratings(str(tdir))
     assert (tdir / "ratings.json").exists()
+    assert json.loads((tdir / "ratings.json").read_text()) == ratings
     pops = ratings["populations"]
     ab = pops[pop_a]["per_opponent"][pop_b]["mean_payoff"]
     ba = pops[pop_b]["per_opponent"][pop_a]["mean_payoff"]
@@ -188,3 +268,8 @@ def test_cli_round_trip(tmp_path):
     table = cli("store.tournament", "ratings", "--dir", str(tdir))
     assert pop_a in table and pop_b in table
     assert (tdir / "ratings.json").exists()
+    ratings = json.loads((tdir / "ratings.json").read_text())
+    for key in ("min_payoff", "max_payoff", "min_win_rate", "max_win_rate"):
+        assert key in table.splitlines()[0]
+        assert key in ratings["populations"][pop_a]
+        assert key in ratings["populations"][pop_a]["per_opponent"][pop_b]
