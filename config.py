@@ -47,7 +47,7 @@ class SubleqConfig:
 @dataclass
 class PayoffConfig:
     # 1 = sequential, >1 = use ProcessPoolExecutor
-    n_workers: int = 15
+    n_workers: int = 10
     # Matchups per batch; batches >1 use a shuffled task list.
     chunksize: int = 2000
 
@@ -188,8 +188,8 @@ class RunConfig:
     # False: persist only newborns that survive their birth generation
     log_all_births: bool = False
     # path to a previous run's out_dir to continue (runs n_iter MORE generations)
-    resume_from: Optional[str] = "outputs/main/20261001_151539" # "outputs/main/20260929_164051" # None
-    # resume_from: Optional[str] = None
+    # resume_from: Optional[str] = "outputs/main/20261001_151539" # "outputs/main/20260929_164051" # None
+    resume_from: Optional[str] = None
     # Restore survivors AFTER this generation; continue at resume_gen + 1.
     # None resumes the latest checkpoint. Explicit generations do not reset RNGs.
     resume_gen: Optional[int] = None

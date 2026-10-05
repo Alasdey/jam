@@ -9,6 +9,7 @@ artifacts. Self-play blocks are excluded from ratings by design.
 import json
 import time
 from pathlib import Path
+import argparse
 
 import numpy as np
 
@@ -78,3 +79,14 @@ def write_ratings(tournament_dir: str) -> dict:
     with open(Path(tournament_dir) / "ratings.json", "w") as f:
         json.dump(ratings, f, indent=2)
     return ratings
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("tournament_dir", help="Tournament directory run dir, e.g. outputs/store/tournaments/<folder>")
+    args = parser.parse_args()
+
+    write_ratings(args.tournament_dir)
+
+
+if __name__ == "__main__":
+    main()
