@@ -98,6 +98,14 @@ class KNNNoveltyStepConfig:
 
 
 @dataclass
+class KNNScoreStepConfig:
+    kind: str = "knn_score"
+    n_accepted: int = 1_000
+    # Keep the smallest mean distance to k other programs' total payoffs.
+    k: int = 10
+
+
+@dataclass
 class CapStepConfig:
     # "cap_top" keeps the best payoff-row-sums, "cap_random" downsamples uniformly
     kind: str = "cap_top"
@@ -182,7 +190,7 @@ class RunConfig:
     # matchup. Only payoff-free steps may go here (selection.base validates).
     pre_selection: list = field(default_factory=lambda: [MaxLengthStepConfig(max_length=10000), DedupeStepConfig()])
     # ordered selection pipeline applied after payoff extension each generation
-    selection: list = field(default_factory=lambda: [KNNNoveltyStepConfig(n_accepted=200, k=10)]) # LexicaseStepConfig(n_accepted=200) # SkimStepConfig(), CapStepConfig()
+    selection: list = field(default_factory=lambda: [KNNScoreStepConfig(n_accepted=200, k=10)]) # LexicaseStepConfig(n_accepted=200) # SkimStepConfig(), CapStepConfig()
     # persist payoffs/payoff_XXXXXX.npz every N generations + final (0 = never)
     payoff_every: int = 10*3
     # False: persist only newborns that survive their birth generation

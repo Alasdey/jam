@@ -110,6 +110,7 @@ Only steps in `selection.base.PAYOFF_FREE_STEPS` may go in `pre_selection`;
 | `cap_random` | `CapStepConfig(kind="cap_random", max_pop)` | Uniform random downsample to `max_pop`. |
 | `lexicase` | `LexicaseStepConfig(n_accepted=1_000)` | Select up to `n_accepted` unique survivors without replacement. Each pick shuffles opponent columns and filters to the exact highest payoff among remaining candidates on each case, breaking final ties uniformly. All original opponent columns remain available for every pick. Uses bitsets over identical payoff rows when each case has at most eight distinct scores; otherwise falls back to array filtering. Both paths preserve individual tie probabilities and the original RNG stream. |
 | `nash` | `NashStepConfig()` | Union of Nash-equilibrium supports via `nashpy` (`selection/nash_set.py`). Support enumeration is exponential — small populations only. |
+| `knn_score` | `KNNScoreStepConfig(n_accepted=1_000, k=10)` | Each program's single coordinate is its total payoff against the other programs (self-play excluded). Keep the `n_accepted` programs with the smallest average absolute score difference to their `k` nearest other programs. Equal scores count as zero-distance neighbors; clamp `k` to the available neighbors and break selection ties randomly. Compute scores and neighborhoods once against the full population entering this step. |
 
 ## Genetic operators (`creation/genetics.py`)
 
