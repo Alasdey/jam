@@ -1,4 +1,4 @@
-"""Select programs whose total payoffs lie closest to their neighbors' totals."""
+"""Select programs whose total payoffs lie furthest from their nearest neighbors."""
 
 import operator
 
@@ -6,7 +6,7 @@ import numpy as np
 
 
 def knn_score_selection(payoff: np.ndarray, n_accepted: int, k: int) -> np.ndarray:
-    """Keep the smallest mean distances to k nearest other scalar scores.
+    """Keep the largest mean distances to k nearest other scalar scores.
 
     A program's sole coordinate is its total payoff against the rest of the
     population, excluding self-play. Distance is the absolute score difference.
@@ -44,5 +44,5 @@ def knn_score_selection(payoff: np.ndarray, n_accepted: int, k: int) -> np.ndarr
         mean_distances[start:stop] = distances[:, :k].mean(axis=1)
 
     shuffled = np.random.permutation(n)
-    ranked = shuffled[np.argsort(mean_distances[shuffled], kind="stable")]
+    ranked = shuffled[np.argsort(-mean_distances[shuffled], kind="stable")]
     return np.sort(ranked[:n_accepted])

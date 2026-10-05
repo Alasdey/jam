@@ -101,7 +101,7 @@ class KNNNoveltyStepConfig:
 class KNNScoreStepConfig:
     kind: str = "knn_score"
     n_accepted: int = 1_000
-    # Keep the smallest mean distance to k other programs' total payoffs.
+    # Keep the largest mean distance to k nearest other programs' total payoffs.
     k: int = 10
 
 

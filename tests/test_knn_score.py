@@ -12,17 +12,17 @@ def clustered_scores_payoff():
     return np.array([[0, 1, -1, 0], [-1, 0, 0, 1], [1, 0, 0, 0], [1, 1, 1, 0]])
 
 
-def test_selects_smallest_distances_using_only_scalar_scores():
+def test_selects_largest_distances_using_only_scalar_scores():
     payoff = clustered_scores_payoff()
     for matrix in (payoff, -payoff):
-        assert knn_score_selection(matrix, 2, 1).tolist() == [0, 1]
+        assert knn_score_selection(matrix, 2, 1).tolist() == [2, 3]
 
 
 def test_self_play_does_not_contribute_to_score():
     payoff = clustered_scores_payoff()
-    # Including these diagonal rewards would select the final two programs.
+    # Including these diagonal rewards would select the first two programs.
     np.fill_diagonal(payoff, [1, -1, 1, -1])
-    assert knn_score_selection(payoff, 2, 1).tolist() == [0, 1]
+    assert knn_score_selection(payoff, 2, 1).tolist() == [2, 3]
 
 
 @pytest.mark.parametrize("k", [1, 7, 999])
@@ -37,10 +37,10 @@ def test_matches_scalar_reference_with_int8_scores_across_blocks(k):
     assert coordinates.min() < -128 and coordinates.max() > 127
     distances = np.abs(coordinates[:, None] - coordinates[None, :])
     np.fill_diagonal(distances, np.inf)
-    density = np.sort(distances, axis=1)[:, :min(k, len(payoff) - 1)].mean(axis=1)
+    mean_distances = np.sort(distances, axis=1)[:, :min(k, len(payoff) - 1)].mean(axis=1)
     np.random.seed(42)
     shuffled = np.random.permutation(len(payoff))
-    expected = np.sort(shuffled[np.argsort(density[shuffled], kind="stable")][:37])
+    expected = np.sort(shuffled[np.argsort(-mean_distances[shuffled], kind="stable")][:37])
     np.random.seed(42)
     assert np.array_equal(knn_score_selection(payoff, 37, k), expected)
 
@@ -89,6 +89,6 @@ def test_counts_must_be_integers(count, k):
 def test_pipeline_registration_and_pre_selection_rejection():
     cfg = KNNScoreStepConfig(n_accepted=2, k=1)
     select, = build_selection([cfg])
-    assert select(clustered_scores_payoff(), [[1], [2], [3], [4]]).tolist() == [0, 1]
+    assert select(clustered_scores_payoff(), [[1], [2], [3], [4]]).tolist() == [2, 3]
     with pytest.raises(ValueError, match="pre_selection"):
         build_selection([cfg], pre=True)
