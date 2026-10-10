@@ -108,9 +108,14 @@ Only steps in `selection.base.PAYOFF_FREE_STEPS` may go in `pre_selection`;
 | `skim` | `SkimStepConfig(n_rounds, fraction, n_accepted)` | Iterated elimination of strictly dominated strategies (`selection/skim.py`; the non-`_fast` variant is kept for reference — it compares over all columns instead of the symmetric active set). `fraction` controls what share of the dominated set is dropped per round; skimming stops early below `n_accepted`. |
 | `cap_top` | `CapStepConfig(max_pop)` | Keep the `max_pop` best payoff row-sums. |
 | `cap_random` | `CapStepConfig(kind="cap_random", max_pop)` | Uniform random downsample to `max_pop`. |
+| `best_worst_random` | `BestWorstRandomStepConfig(n_best=1_000, n_worst=0, n_rand=0)` | Keep the `n_best` highest payoff row-sums, then the `n_worst` lowest among those left, then `n_rand` uniformly random remaining individuals without replacement. Scores use the full population entering this step; ties are broken randomly. Return sorted, unique indices; oversized quotas keep everyone. |
 | `lexicase` | `LexicaseStepConfig(n_accepted=1_000)` | Select up to `n_accepted` unique survivors without replacement. Each pick shuffles opponent columns and filters to the exact highest payoff among remaining candidates on each case, breaking final ties uniformly. All original opponent columns remain available for every pick. Uses bitsets over identical payoff rows when each case has at most eight distinct scores; otherwise falls back to array filtering. Both paths preserve individual tie probabilities and the original RNG stream. |
 | `nash` | `NashStepConfig()` | Union of Nash-equilibrium supports via `nashpy` (`selection/nash_set.py`). Support enumeration is exponential — small populations only. |
 | `knn_score` | `KNNScoreStepConfig(n_accepted=1_000, k=10)` | Each program's single coordinate is its total payoff against the other programs (self-play excluded). Keep the `n_accepted` programs with the largest average absolute score difference to their `k` nearest other programs. Equal scores count as zero-distance neighbors; clamp `k` to the available neighbors and break selection ties randomly. Compute scores and neighborhoods once against the full population entering this step. |
+
+For example, set `RunConfig.selection` to
+`[BestWorstRandomStepConfig(n_best=150, n_worst=25, n_rand=25)]` to retain up to 200
+individuals in those three groups.
 
 ## Genetic operators (`creation/genetics.py`)
 

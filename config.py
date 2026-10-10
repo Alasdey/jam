@@ -106,6 +106,15 @@ class KNNScoreStepConfig:
 
 
 @dataclass
+class BestWorstRandomStepConfig:
+    kind: str = "best_worst_random"
+    # Best total payoff scores, then worst remaining, then random remaining.
+    n_best: int = 1_000
+    n_worst: int = 0
+    n_rand: int = 0
+
+
+@dataclass
 class CapStepConfig:
     # "cap_top" keeps the best payoff-row-sums, "cap_random" downsamples uniformly
     kind: str = "cap_top"
