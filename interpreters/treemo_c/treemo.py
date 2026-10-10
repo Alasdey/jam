@@ -51,19 +51,21 @@ class TreemoInterpreter:
         self._cache: dict[bytes, int] = {}  # code bytes -> compiled handle (c_void_p)
 
     def run(self, code: List[int], inp: List[int]) -> Tuple[List[int], List[int]]:
-        key = bytes(code)
-        if key not in self._cache:
-            self._cache[key] = _lib.treemo_compile(key, len(key))
-        handle = self._cache[key]
+        return list(self.run_bytes(bytes(code), bytes(inp))), code
 
-        inp_bytes = bytes(inp)
+    def run_bytes(self, code: bytes, inp: bytes) -> bytes:
+        """run() on bytes, output as bytes: batch callers skip the list round trip."""
+        if code not in self._cache:
+            self._cache[code] = _lib.treemo_compile(code, len(code))
+        handle = self._cache[code]
+
         out_len = ctypes.c_int(0)
-        ptr = _lib.treemo_exec(handle, inp_bytes, len(inp_bytes),
+        ptr = _lib.treemo_exec(handle, inp, len(inp),
                                self.max_step, self.pass_mode, self.first_mode,
                                ctypes.byref(out_len))
-        result = list(ctypes.string_at(ptr, out_len.value))
+        result = ctypes.string_at(ptr, out_len.value)
         _lib.treemo_free_buf(ptr)
-        return result, code
+        return result
 
     def __del__(self):
         for handle in self._cache.values():

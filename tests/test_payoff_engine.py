@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from config import ExperimentConfig, PayoffConfig, TreemoConfig
+from core.matchups import play_one
 from creation.treemo import gen_tree
 from interpreters import build_interpreter
 from rewards.base import REWARDS, RewardSpec, build_reward
@@ -24,9 +25,9 @@ def _programs(n, seed):
     return [gen_tree(random.randint(5, 20)) for _ in range(n)]
 
 
-def reward_row_length(interpreter, code_a, code_b) -> int:
+def reward_row_length(m):
     # deliberately NOT zero-sum: depends on code_a only
-    return len(code_a) % 3
+    return m.a.length() % 3
 
 
 def test_matrix_matches_direct_evaluation():
@@ -37,7 +38,7 @@ def test_matrix_matches_direct_evaluation():
         got = engine.matrix(ref, pop)
     interp = build_interpreter(cfg)
     fn = REWARDS["placeholder"].fn
-    expected = np.array([[fn(interp, a, b) for b in pop] for a in ref])
+    expected = np.array([[play_one(fn, interp, a, b) for b in pop] for a in ref])
     assert got.shape == (4, 5)
     assert np.array_equal(got, expected)
 

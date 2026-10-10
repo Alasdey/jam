@@ -9,6 +9,11 @@ dependencies = [
     "nashpy>=0.0.43",
 ]
 
+[project.optional-dependencies]
+gpu = [
+    "cupy-cuda13x[ctk]>=14.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",

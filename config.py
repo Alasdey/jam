@@ -48,8 +48,21 @@ class SubleqConfig:
 class PayoffConfig:
     # 1 = sequential, >1 = use ProcessPoolExecutor
     n_workers: int = 10
-    # Matchups per batch; batches >1 use a shuffled task list.
+    # Matchups per CPU task: the block is cut into tiles this size, run in shuffled order.
     chunksize: int = 2000
+    # Where rewards are scored (same reward functions, same results):
+    # "cpu": tiles of the block over n_workers processes, any interpreter.
+    # "cuda": each block as one GPU batch (treemo only; needs CuPy, see
+    # interpreters/treemo_gpu/README.md).
+    backend: str = "cpu"
+    # Device memory per launch; larger blocks are split into several launches.
+    gpu_memory_mb: int = 1024
+    # Matchups scored per GPU batch; bigger blocks go in tiles, so memory stays
+    # bounded (all outputs of a batch stay on the device until it is scored).
+    gpu_batch_matchups: int = 1_000_000
+    # Host processes feeding the GPU (each with its own CUDA context, ~1.5 GiB
+    # of device memory per 1M-matchup batch); 1 = in the calling process.
+    gpu_workers: int = 1
 
 
 # --- Selection step configs (ordered pipeline applied each generation) ---
