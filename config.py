@@ -199,7 +199,7 @@ class RunConfig:
     # matchup. Only payoff-free steps may go here (selection.base validates).
     pre_selection: list = field(default_factory=lambda: [MaxLengthStepConfig(max_length=10000), DedupeStepConfig()])
     # ordered selection pipeline applied after payoff extension each generation
-    selection: list = field(default_factory=lambda: [KNNScoreStepConfig(n_accepted=200, k=10)]) # LexicaseStepConfig(n_accepted=200) # SkimStepConfig(), CapStepConfig()
+    selection: list = field(default_factory=lambda: [BestWorstRandomStepConfig(n_best=150, n_worst=20, n_rand=30)])
     # persist payoffs/payoff_XXXXXX.npz every N generations + final (0 = never)
     payoff_every: int = 10*3
     # False: persist only newborns that survive their birth generation
