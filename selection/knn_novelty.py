@@ -31,6 +31,15 @@ def knn_novelty_selection(payoff: np.ndarray, n_accepted: int, k: int) -> np.nda
         return np.arange(n)
     if n_accepted == 0:
         return np.empty(0, dtype=int)
+    scores = _knn_novelty_distances(payoff, k)
+    shuffled = np.random.permutation(n)
+    ranked = shuffled[np.argsort(-scores[shuffled], kind="stable")]
+    return np.sort(ranked[:n_accepted])
+
+
+def _knn_novelty_distances(payoff: np.ndarray, k: int) -> np.ndarray:
+    """Score a validated population of at least two programs, without sampling."""
+    n = len(payoff)
     k = min(k, n - 1)
     norms = np.einsum("ij,ij->i", payoff, payoff)
     scores = np.empty(n)
@@ -44,6 +53,4 @@ def knn_novelty_selection(payoff: np.ndarray, n_accepted: int, k: int) -> np.nda
         distances[np.arange(stop - start), np.arange(start, stop)] = np.inf
         distances.partition(k - 1, axis=1)
         scores[start:stop] = np.sqrt(distances[:, :k]).mean(axis=1)
-    shuffled = np.random.permutation(n)
-    ranked = shuffled[np.argsort(-scores[shuffled], kind="stable")]
-    return np.sort(ranked[:n_accepted])
+    return scores

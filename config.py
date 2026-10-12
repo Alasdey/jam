@@ -115,6 +115,19 @@ class BestWorstRandomStepConfig:
 
 
 @dataclass
+class MixtureStepConfig:
+    kind: str = "mixture"
+    n_best: int = 1_000
+    # Pool of next-best payoff row-sums, after excluding n_best.
+    n_good: int = 1_000
+    # Select from that pool by scalar kNN distance against the full population.
+    n_good_novel: int = 0
+    # Select from all unselected programs by full-population payoff-row novelty.
+    n_novelty: int = 0
+    k: int = 10
+
+
+@dataclass
 class CapStepConfig:
     # "cap_top" keeps the best payoff-row-sums, "cap_random" downsamples uniformly
     kind: str = "cap_top"

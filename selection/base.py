@@ -10,6 +10,8 @@ from selection.knn_novelty import knn_novelty_selection
 from selection.knn_score import knn_score_selection
 from config import BestWorstRandomStepConfig
 from selection.best_worst_random import best_worst_random_selection
+from config import MixtureStepConfig
+from selection.mixture import mixture_selection
 from selection.skim import iterated_elimination_strictly_dominated_rows_fast
 
 # A selection step maps the square self-play payoff matrix, plus the genomes of
@@ -25,7 +27,7 @@ from selection.skim import iterated_elimination_strictly_dominated_rows_fast
 # named in PAYOFF_FREE_STEPS may be used pre-evaluation.
 SelectFn = Callable[[Optional[np.ndarray], Sequence[Program]], np.ndarray]
 
-StepConfig = Union[DedupeStepConfig, MaxLengthStepConfig, SkimStepConfig, CapStepConfig, NashStepConfig, LexicaseStepConfig, KNNNoveltyStepConfig, KNNScoreStepConfig, BestWorstRandomStepConfig]
+StepConfig = Union[DedupeStepConfig, MaxLengthStepConfig, SkimStepConfig, CapStepConfig, NashStepConfig, LexicaseStepConfig, KNNNoveltyStepConfig, KNNScoreStepConfig, BestWorstRandomStepConfig, MixtureStepConfig]
 
 # Steps that never read the payoff matrix, and so can run pre-evaluation.
 PAYOFF_FREE_STEPS = frozenset({"dedupe", "max_length"})
@@ -106,6 +108,15 @@ def build_best_worst_random(cfg: BestWorstRandomStepConfig) -> SelectFn:
     return select
 
 
+def build_mixture(cfg: MixtureStepConfig) -> SelectFn:
+    def select(payoff: np.ndarray, genomes: Sequence[Program]) -> np.ndarray:
+        return mixture_selection(
+            payoff, cfg.n_best, cfg.n_good, cfg.n_good_novel, cfg.n_novelty, cfg.k
+        )
+
+    return select
+
+
 def build_cap_top(cfg: CapStepConfig) -> SelectFn:
     def select(payoff: np.ndarray, genomes: Sequence[Program]) -> np.ndarray:
         n = payoff.shape[0]
@@ -145,6 +156,7 @@ SELECTION_STEPS: dict[str, Callable[..., SelectFn]] = {
     "knn_novelty": build_knn_novelty,
     "knn_score": build_knn_score,
     "best_worst_random": build_best_worst_random,
+    "mixture": build_mixture,
     "cap_top": build_cap_top,
     "cap_random": build_cap_random,
     "nash": build_nash,

@@ -112,10 +112,17 @@ Only steps in `selection.base.PAYOFF_FREE_STEPS` may go in `pre_selection`;
 | `lexicase` | `LexicaseStepConfig(n_accepted=1_000)` | Select up to `n_accepted` unique survivors without replacement. Each pick shuffles opponent columns and filters to the exact highest payoff among remaining candidates on each case, breaking final ties uniformly. All original opponent columns remain available for every pick. Uses bitsets over identical payoff rows when each case has at most eight distinct scores; otherwise falls back to array filtering. Both paths preserve individual tie probabilities and the original RNG stream. |
 | `nash` | `NashStepConfig()` | Union of Nash-equilibrium supports via `nashpy` (`selection/nash_set.py`). Support enumeration is exponential — small populations only. |
 | `knn_score` | `KNNScoreStepConfig(n_accepted=1_000, k=10)` | Each program's single coordinate is its total payoff against the other programs (self-play excluded). Keep the `n_accepted` programs with the largest average absolute score difference to their `k` nearest other programs. Equal scores count as zero-distance neighbors; clamp `k` to the available neighbors and break selection ties randomly. Compute scores and neighborhoods once against the full population entering this step. |
+| `mixture` | `MixtureStepConfig(n_best=1_000, n_good=1_000, n_good_novel=0, n_novelty=0, k=10)` | Keep `n_best` by highest payoff row-sum. From the next `n_good` by that same score, keep `n_good_novel` by the existing scalar `knn_score` criterion. Then keep `n_novelty` by the existing payoff-row `knn_novelty` criterion among everyone still unselected, including candidates passed over in the good pool. Both kNN rankings use the full input population and the same `k`; neither is recomputed after selecting a group. Require `n_good_novel <= n_good`; return sorted, unique indices, break ties randomly, and keep everyone when survivor quotas cover the population. |
 
 For example, set `RunConfig.selection` to
 `[BestWorstRandomStepConfig(n_best=150, n_worst=25, n_rand=25)]` to retain up to 200
 individuals in those three groups.
+
+To mix quality and novelty, use
+`[MixtureStepConfig(n_best=150, n_good=500, n_good_novel=30, n_novelty=20, k=10)]`.
+This retains up to 200 individuals: 150 best, 30 scalar-novel from the next 500
+best, and 20 novel payoff profiles from the remainder. `n_good` is a candidate
+pool size, not an additional survivor quota.
 
 ## Genetic operators (`creation/genetics.py`)
 

@@ -32,6 +32,15 @@ def knn_score_selection(payoff: np.ndarray, n_accepted: int, k: int) -> np.ndarr
     if n_accepted == 0:
         return np.empty(0, dtype=int)
 
+    mean_distances = _knn_score_distances(payoff, k)
+    shuffled = np.random.permutation(n)
+    ranked = shuffled[np.argsort(-mean_distances[shuffled], kind="stable")]
+    return np.sort(ranked[:n_accepted])
+
+
+def _knn_score_distances(payoff: np.ndarray, k: int) -> np.ndarray:
+    """Score a validated population of at least two programs, without sampling."""
+    n = len(payoff)
     k = min(k, n - 1)
     coordinates = payoff.sum(axis=1) - payoff.diagonal()
     mean_distances = np.empty(n)
@@ -43,6 +52,4 @@ def knn_score_selection(payoff: np.ndarray, n_accepted: int, k: int) -> np.ndarr
         distances.partition(k - 1, axis=1)
         mean_distances[start:stop] = distances[:, :k].mean(axis=1)
 
-    shuffled = np.random.permutation(n)
-    ranked = shuffled[np.argsort(-mean_distances[shuffled], kind="stable")]
-    return np.sort(ranked[:n_accepted])
+    return mean_distances
