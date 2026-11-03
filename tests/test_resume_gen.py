@@ -20,9 +20,9 @@ def _cfg(path, **overrides):
         seed=123, n_random=3, n_offspring=2, n_iter=5, payoff_every=2,
         selection=[CapStepConfig(max_pop=8)],
         experiment=ExperimentConfig(
-            interpreter="treemo_py", reward="placeholder",
+            interpreter="treemo", reward="placeholder",
             treemo=TreemoConfig(max_step=4, tree_size=8),
-            payoff=PayoffConfig(n_workers=1),
+            payoff=PayoffConfig(),
         ),
     )
     values.update(overrides)
@@ -34,14 +34,8 @@ def _files(path):
             for p in path.rglob("*") if p.is_file()}
 
 
-def _assert_numpy_state(a, b):
-    assert a[0] == b[0]
-    np.testing.assert_array_equal(a[1], b[1])
-    assert a[2:] == b[2:]
-
-
 @pytest.mark.parametrize("gen", [0, 2])
-def test_snapshot_restart_keeps_population_rng_and_complete_backup(tmp_path, monkeypatch, gen):
+def test_snapshot_restart_keeps_population_and_complete_backup(tmp_path, monkeypatch, gen):
     path = tmp_path / "run"
     run(_cfg(path))
     records = reconstruct_population(str(path), gen)
@@ -49,26 +43,18 @@ def test_snapshot_restart_keeps_population_rng_and_complete_backup(tmp_path, mon
     before = _files(path)
     with np.load(path / "payoffs" / f"payoff_{gen:06d}.npz") as data:
         expected = data["payoff"]
-    py_state, np_state = random.getstate(), np.random.get_state()
 
     def forbidden(*args, **kwargs):
-        raise AssertionError("Historical resume must not seed/restore RNGs or recompute a valid snapshot")
+        raise AssertionError("Historical resume must not recompute a valid snapshot")
 
-    monkeypatch.setattr(random, "seed", forbidden)
-    monkeypatch.setattr(random, "setstate", forbidden)
-    monkeypatch.setattr(np.random, "seed", forbidden)
-    monkeypatch.setattr(np.random, "set_state", forbidden)
-    monkeypatch.setattr(PayoffEngine, "matrix", forbidden)
+    monkeypatch.setattr(PayoffEngine, "square", forbidden)
     run(_cfg(path, resume_from=str(path), resume_gen=gen, n_iter=0))
-    assert random.getstate() == py_state
-    _assert_numpy_state(np.random.get_state(), np_state)
     assert last_gen(str(path)) == gen
     assert reconstruct_population(str(path)) == records
     ck = load_checkpoint(str(path))
     assert ck["gen"] == gen + 1
     assert ck["next_id"] == previous["next_id"]
     np.testing.assert_array_equal(ck["payoff"], expected)
-    _assert_numpy_state(ck["np_random_state"], np_state)
     backups = list(tmp_path.glob(".run.before_gen_*"))
     assert len(backups) == 1
     assert _files(backups[0]) == before
@@ -80,17 +66,17 @@ def test_missing_payoff_recomputes_and_normal_resume_follows_new_history(tmp_pat
     path = tmp_path / "run"
     run(_cfg(path))
     old_next_id = load_checkpoint(str(path))["next_id"]
-    original = PayoffEngine.matrix
+    original = PayoffEngine.square
     calls = []
 
-    def record(self, rows, cols):
-        calls.append((len(rows), len(cols)))
-        return original(self, rows, cols)
+    def record(self, pop, known=None, n_known=0):
+        calls.append((len(pop), n_known))
+        return original(self, pop, known, n_known)
 
-    monkeypatch.setattr(PayoffEngine, "matrix", record)
+    monkeypatch.setattr(PayoffEngine, "square", record)
     records = reconstruct_population(str(path), 1)
     run(_cfg(path, resume_from=str(path), resume_gen=1, n_iter=2))
-    assert calls[0] == (len(records), len(records))
+    assert calls[0] == (len(records), 0)  # the whole matrix, recomputed
     assert last_gen(str(path)) == 3
     assert [json.loads(line)["gen"] for line in (path / "metrics.jsonl").read_text().splitlines()] == [0, 1, 2, 3]
     assert not (path / "populations/births_000004.jsonl").exists()
@@ -113,14 +99,11 @@ def test_restart_without_checkpoint_or_snapshot(tmp_path):
     genomes = [r["genome"] for r in records]
     with PayoffEngine(cfg.experiment, build_reward(cfg.experiment)) as engine:
         expected = engine.matrix(genomes, genomes)
-    py_state, np_state = random.getstate(), np.random.get_state()
     run(cfg)
     ck = load_checkpoint(str(path))
     assert ck["gen"] == 2
     assert ck["next_id"] > max(r["id"] for r in records)
     np.testing.assert_array_equal(ck["payoff"], expected)
-    assert random.getstate() == py_state
-    _assert_numpy_state(np.random.get_state(), np_state)
 
 
 @pytest.mark.parametrize("value", [-1, 1.5, True, "2", 99])
@@ -160,7 +143,7 @@ def test_failed_recomputation_leaves_run_untouched(tmp_path, monkeypatch):
     def fail(*args):
         raise RuntimeError("evaluation failed")
 
-    monkeypatch.setattr(PayoffEngine, "matrix", fail)
+    monkeypatch.setattr(PayoffEngine, "square", fail)
     with pytest.raises(RuntimeError, match="evaluation failed"):
         run(_cfg(path, resume_from=str(path), resume_gen=1, n_iter=0))
     assert _files(path) == before

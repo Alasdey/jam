@@ -20,7 +20,7 @@ from core.device import cupy
 from core.matchups import Matchups
 from core.population import Population
 from interpreters.treemo_gpu.rules import extract_rules
-from interpreters.treemo_gpu.treemo import TreemoRuntime
+from interpreters import build_runtime
 from rewards.base import RewardSpec
 
 _POOL_SLACK = 2**30  # cached-but-unused device memory released between batches
@@ -32,7 +32,7 @@ class PayoffEngine:
             raise ValueError("payoff.gpu_batch_matchups must be at least 1")
         self.exp_cfg = exp_cfg
         self.reward = reward
-        self.runtime = TreemoRuntime.from_config(exp_cfg)
+        self.runtime = build_runtime(exp_cfg)
         self.batch = exp_cfg.payoff.gpu_batch_matchups
 
     def _score(self, pop: Population, rules, a, b):

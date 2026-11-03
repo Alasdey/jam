@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from core.types import Individual
+from core.population import METHODS
 
 
 def write_checkpoint(out_dir: Path, blob: dict[str, Any]) -> None:
@@ -41,7 +41,7 @@ class ExperimentLogger:
                                 (meta_resumed_<ts>.json on resume)
       metrics.jsonl           — one JSON record per generation (append)
       populations/
-        births_XXXXXX.jsonl   — newborn Individual records persisted at gen XXXXXX
+        births_XXXXXX.jsonl   — newborn records persisted at gen XXXXXX
         survivors_XXXXXX.json — {"gen", "ids", "scores"} after selection
       payoffs/
         payoff_XXXXXX.npz     — arrays: payoff (int32, square), ids (int64)
@@ -86,18 +86,21 @@ class ExperimentLogger:
         self,
         gen: int,
         metrics: dict[str, Any],
-        births: list[Individual],
+        births,
         survivor_ids: list[int],
         scores: list[int],
         payoff: Optional[np.ndarray] = None,
     ) -> None:
+        """births: a core.population.Population of the newborns to persist."""
         self.log_metrics(metrics)
 
-        if births:
+        if len(births):
             with open(self._pops_dir / f"births_{gen:06d}.jsonl", "w") as f:
-                for ind in births:
-                    json.dump(asdict(ind), f)
-                    f.write("\n")
+                for i, bits in enumerate(births.bits()):
+                    parents = ", ".join(str(int(p)) for p in births.parents[i] if p >= 0)
+                    f.write(f'{{"id": {int(births.ids[i])}, "genome": [{_genome_json(bits)}], '
+                            f'"method": "{METHODS[births.method[i]]}", "parents": [{parents}], '
+                            f'"born_gen": {int(births.born_gen[i])}}}\n')
 
         with open(self._pops_dir / f"survivors_{gen:06d}.json", "w") as f:
             json.dump({"gen": gen, "ids": survivor_ids, "scores": scores}, f)
@@ -111,3 +114,13 @@ class ExperimentLogger:
 
     def write_checkpoint(self, blob: dict[str, Any]) -> None:
         write_checkpoint(self.out_dir, blob)
+
+
+def _genome_json(bits: np.ndarray) -> str:
+    """The JSON list body of a 0/1 genome ("1, 0, 1"), built without Python ints."""
+    if not len(bits):
+        return ""
+    text = np.full(3 * len(bits) - 2, ord(" "), dtype=np.uint8)
+    text[0::3] = bits + ord("0")
+    text[1::3] = ord(",")
+    return text.tobytes().decode()

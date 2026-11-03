@@ -1,71 +1,16 @@
-from typing import Callable
+"""
+Treemo is jam's only interpreter, and it runs on the GPU (interpreters/treemo_gpu).
+
+interpreters/treemo_c (C, via ctypes) and interpreters/treemo_py (the
+language spec in Python) are the references the GPU kernels are tested
+against; nothing in a run uses them.
+"""
 
 from config import ExperimentConfig
-from core.types import Interpreter
-
-# Builders import lazily so that selecting one interpreter never loads
-# another's shared library.
+from interpreters.treemo_gpu.treemo import TreemoRuntime
 
 
-def _build_subleq(cfg: ExperimentConfig) -> Interpreter:
-    from interpreters.subleq.subleq import SubleqInterpreter
-
-    return SubleqInterpreter(
-        library_path=cfg.subleq.library_path,
-        max_output_length=cfg.subleq.max_output_length,
-        max_iter=cfg.subleq.max_iter,
-    )
-
-
-def _build_iconfractran(cfg: ExperimentConfig) -> Interpreter:
-    from interpreters.iconfractran.iconfractran import IconfractranInterpreter
-
-    return IconfractranInterpreter(max_step=cfg.iconfractran.max_step)
-
-
-def _build_treemo_c(cfg: ExperimentConfig) -> Interpreter:
-    from interpreters.treemo_c.treemo import TreemoInterpreter
-
-    return TreemoInterpreter(
-        max_step=cfg.treemo.max_step,
-        pass_mode=cfg.treemo.pass_mode,
-        first_mode=cfg.treemo.first_mode,
-    )
-
-
-def _build_treemo_py(cfg: ExperimentConfig) -> Interpreter:
-    from interpreters.treemo_py.treemo import TreemoInterpreter
-
-    return TreemoInterpreter(
-        max_step=cfg.treemo.max_step,
-        pass_mode=cfg.treemo.pass_mode,
-        first_mode=cfg.treemo.first_mode,
-    )
-
-
-INTERPRETERS: dict[str, Callable[[ExperimentConfig], Interpreter]] = {
-    "subleq": _build_subleq,
-    "iconfractran": _build_iconfractran,
-    "treemo": _build_treemo_c,
-    "treemo_py": _build_treemo_py,
-}
-
-
-def build_interpreter(cfg: ExperimentConfig) -> Interpreter:
-    return INTERPRETERS[cfg.interpreter](cfg)
-
-
-def build_cuda_interpreter(cfg: ExperimentConfig):
-    """Batched GPU Treemo for payoff.backend="cuda"; same semantics as "treemo"."""
+def build_runtime(cfg: ExperimentConfig) -> TreemoRuntime:
     if cfg.interpreter != "treemo":
-        raise ValueError(
-            f"payoff.backend='cuda' runs the treemo interpreter, not {cfg.interpreter!r}"
-        )
-    from interpreters.treemo_gpu.treemo import TreemoInterpreter
-
-    return TreemoInterpreter(
-        max_step=cfg.treemo.max_step,
-        pass_mode=cfg.treemo.pass_mode,
-        first_mode=cfg.treemo.first_mode,
-        memory_mb=cfg.payoff.gpu_memory_mb,
-    )
+        raise ValueError(f"jam runs Treemo only, on the GPU; got interpreter {cfg.interpreter!r}")
+    return TreemoRuntime.from_config(cfg)

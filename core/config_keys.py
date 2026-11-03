@@ -10,15 +10,7 @@ Kept out of config.py so that module stays a declaration of values.
 import hashlib
 import json
 
-from config import (
-    CodeConfig,
-    ExperimentConfig,
-    GeneticsConfig,
-    IconfractranConfig,
-    PayoffConfig,
-    SubleqConfig,
-    TreemoConfig,
-)
+from config import ExperimentConfig, GeneticsConfig, PayoffConfig, TreemoConfig
 
 
 def _canonical_hash(obj) -> str:
@@ -60,15 +52,31 @@ def method_key(run_cfg_dict: dict) -> str:
     return _canonical_hash(payload)
 
 
+# Keys of configs written before jam ran on the GPU (other interpreters, CPU
+# workers): dropped on reading, so stored populations and tournaments stay usable.
+_LEGACY_TOP = {"subleq", "iconfractran", "code"}
+_LEGACY_PAYOFF = {"n_workers", "chunksize", "backend", "gpu_workers"}
+_LEGACY_GENETICS = {"code_mutation_op", "code_crossover_op"}
+_TOP = {"interpreter", "reward", "treemo", "payoff", "genetics"}
+
+
 def exp_cfg_from_dict(d: dict) -> ExperimentConfig:
-    """Rebuild an ExperimentConfig from a persisted config dict (fails loudly on drift)."""
+    """
+    Rebuild an ExperimentConfig from a persisted config dict. Legacy keys are
+    dropped by name; any other unknown key fails loudly. Payoff resources an
+    old config does not mention (GPU memory, batch size) take today's values.
+    """
+    unknown = set(d) - _TOP - _LEGACY_TOP
+    if unknown:
+        raise ValueError(f"unknown experiment config keys: {sorted(unknown)}")
+    if d["interpreter"] != "treemo":
+        raise ValueError(f"jam runs Treemo only; this config is for {d['interpreter']!r}")
+    payoff = {k: v for k, v in d["payoff"].items() if k not in _LEGACY_PAYOFF}
+    genetics = {k: v for k, v in d["genetics"].items() if k not in _LEGACY_GENETICS}
     return ExperimentConfig(
         interpreter=d["interpreter"],
         reward=d["reward"],
-        subleq=SubleqConfig(**d["subleq"]),
-        iconfractran=IconfractranConfig(**d["iconfractran"]),
         treemo=TreemoConfig(**d["treemo"]),
-        payoff=PayoffConfig(**d["payoff"]),
-        genetics=GeneticsConfig(**d["genetics"]),
-        code=CodeConfig(**d["code"]),
+        payoff=PayoffConfig(**payoff),
+        genetics=GeneticsConfig(**genetics),
     )

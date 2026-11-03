@@ -9,9 +9,9 @@ import pytest
 
 from analysis.tournament_ratings import compute_ratings, load_block, write_ratings
 from config import ExperimentConfig, PayoffConfig, RunConfig, SkimStepConfig, TreemoConfig
-from core.matchups import play_one
+from tests.reference.host_matchups import play_one
 from core.loop import run
-from interpreters import build_interpreter
+from interpreters.treemo_c.treemo import TreemoInterpreter as CTreemo
 from rewards.base import REWARDS
 from store.population_store import load, publish
 from store.tournament import add_populations, create_tournament, load_tournament
@@ -21,7 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 def _exp(max_step=10) -> ExperimentConfig:
     return ExperimentConfig(
-        interpreter="treemo_py",
+        interpreter="treemo",
         reward="placeholder",
         treemo=TreemoConfig(max_step=max_step, tree_size=15),
     )
@@ -82,7 +82,8 @@ def test_block_matches_direct_evaluation_and_reverse_is_negated(arena):
     _, a_individuals = load(str(store), pop_a)
     _, b_individuals = load(str(store), pop_b)
 
-    interp = build_interpreter(_exp())
+    t = _exp().treemo
+    interp = CTreemo(t.max_step, t.pass_mode, t.first_mode)
     fn = REWARDS["placeholder"].fn
     expected = np.array([
         [play_one(fn, interp, ra["genome"], rb["genome"]) for rb in b_individuals]
@@ -277,34 +278,11 @@ def test_cli_round_trip(tmp_path):
         assert key in ratings["populations"][pop_a]["per_opponent"][pop_b]
 
 
-@pytest.mark.cuda
-def test_cuda_backend_stores_the_same_blocks(tmp_path):
-    store = tmp_path / "store"
-    pops = []
-    for label, seed in (("alpha", 1), ("beta", 2)):
-        cfg = RunConfig(
-            seed=seed, n_random=6, n_offspring=6, n_iter=3,
-            selection=[SkimStepConfig(n_rounds=1, n_accepted=None)],
-            out_dir=str(tmp_path / f"run_{label}"), publish_label=None,
-            experiment=ExperimentConfig(
-                interpreter="treemo", reward="quine_pressure",
-                treemo=TreemoConfig(max_step=20, tree_size=15),
-                payoff=PayoffConfig(n_workers=1),
-            ),
-        )
-        run(cfg)
-        pops.append(publish(str(store), label, cfg.out_dir))
-    blocks = {}
-    for backend in ("cpu", "cuda"):
-        tdir = tmp_path / f"tournament_{backend}"
-        create_tournament(str(tdir), "quine_pressure", pops[0], str(store),
-                          include_self=True, backend=backend)
-        add_populations(str(tdir), [pops[1]], include_self=True, backend=backend)
-        blocks[backend] = {}
-        for path in (tdir / "blocks").glob("*.npz"):
-            with np.load(path) as z:
-                blocks[backend][path.name] = z["payoff"]
-    assert len(blocks["cpu"]) == 3
-    assert blocks["cpu"].keys() == blocks["cuda"].keys()
-    for name, payoff in blocks["cpu"].items():
-        assert np.array_equal(payoff, blocks["cuda"][name])
+def test_a_reward_whose_zero_sum_flag_changed_is_refused(arena, monkeypatch):
+    store, tdir, pop_a, pop_b = arena
+    doc = load_tournament(str(tdir))
+    doc["zero_sum"] = not doc["zero_sum"]  # as if the reward had been redefined since
+    with open(tdir / "tournament.json", "w") as f:
+        json.dump(doc, f)
+    with pytest.raises(ValueError, match="different definition"):
+        add_populations(str(tdir), [pop_a])

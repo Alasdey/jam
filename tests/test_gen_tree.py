@@ -1,7 +1,6 @@
 import random
 
-from creation.genetics import _is_balanced
-from creation.treemo import gen_tree
+from tests.reference.creation_cpu import _is_balanced, gen_tree
 
 
 def test_gen_tree_single_node_is_empty_word():

@@ -38,14 +38,16 @@ def pack(genomes: Sequence[Sequence[int]]) -> tuple[np.ndarray, np.ndarray]:
     return np.packbits(bits, bitorder="little").view("<u4").copy(), offsets
 
 
+def unpack_bits(words: np.ndarray, offsets: np.ndarray, lengths: np.ndarray) -> list[np.ndarray]:
+    """Each tape of a host copy of a heap as a uint8 array of 0/1."""
+    as_bytes = np.ascontiguousarray(words).view(np.uint8)
+    return [np.unpackbits(as_bytes[4 * off:4 * off + 4 * ((n + 31) // 32)], bitorder="little", count=n)
+            for off, n in zip(offsets.tolist(), lengths.tolist())]
+
+
 def unpack(words: np.ndarray, offsets: np.ndarray, lengths: np.ndarray) -> list[list[int]]:
     """The inverse of pack, from a host copy of a heap."""
-    as_bytes = np.ascontiguousarray(words).view(np.uint8)
-    out = []
-    for off, n in zip(offsets.tolist(), lengths.tolist()):
-        out.append(np.unpackbits(as_bytes[4 * off:4 * off + 4 * ((n + 31) // 32)],
-                                 bitorder="little", count=n).tolist())
-    return out
+    return [bits.tolist() for bits in unpack_bits(words, offsets, lengths)]
 
 
 @dataclass
@@ -130,11 +132,15 @@ class Population:
     def lengths(self) -> np.ndarray:
         return cupy().asnumpy(self.length).astype(np.int64)
 
-    def genomes(self, idx=None) -> list[list[int]]:
-        """Host copies of the genomes (all, or those at idx), as lists of ints."""
+    def bits(self, idx=None) -> list[np.ndarray]:
+        """Host copies of the genomes (all, or those at idx), as uint8 arrays of 0/1."""
         cp = cupy()
         sub = self if idx is None else self.take(idx)
-        return unpack(cp.asnumpy(sub.heap), cp.asnumpy(sub.offset), sub.lengths())
+        return unpack_bits(cp.asnumpy(sub.heap), cp.asnumpy(sub.offset), sub.lengths())
+
+    def genomes(self, idx=None) -> list[list[int]]:
+        """Host copies of the genomes (all, or those at idx), as lists of ints."""
+        return [b.tolist() for b in self.bits(idx)]
 
     def hashes(self):
         """64-bit hash of each genome (device uint64); equal genomes hash equal."""

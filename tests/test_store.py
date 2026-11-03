@@ -23,7 +23,7 @@ from store.population_store import (
 
 def _exp() -> ExperimentConfig:
     return ExperimentConfig(
-        interpreter="treemo_py",
+        interpreter="treemo",
         reward="placeholder",
         treemo=TreemoConfig(max_step=10, tree_size=15),
     )
@@ -51,7 +51,7 @@ def test_compat_key_covers_execution_semantics_only():
     same = asdict(_exp())
     same["reward"] = "quine_pressure"
     same["genetics"]["mutation_rate"] = 0.9
-    same["code"]["code_length"] = 7
+    same["payoff"]["gpu_batch_matchups"] = 7
     assert compat_key(base) == compat_key(same)
 
     changed = asdict(_exp())
@@ -59,7 +59,7 @@ def test_compat_key_covers_execution_semantics_only():
     assert compat_key(base) != compat_key(changed)
 
     other_interp = asdict(_exp())
-    other_interp["interpreter"] = "treemo"
+    other_interp["interpreter"] = "treemo_py"  # stored populations from the Python interpreter stay apart
     assert compat_key(base) != compat_key(other_interp)
 
 

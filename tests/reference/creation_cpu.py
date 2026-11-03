@@ -249,3 +249,7 @@ def make_offspring(
             parent_indices.append([idx])
         offspring.append(child)
     return offspring, methods, parent_indices
+
+
+TREE_MUTATION_OPS = {"leaf": mutate_tree_leaf, "subtree": mutate_tree_subtree}
+TREE_CROSSOVER_OPS = {"depth1": crossover_tree_depth1, "random_depth": crossover_tree_random_depth}

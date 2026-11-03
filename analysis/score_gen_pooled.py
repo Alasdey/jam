@@ -65,15 +65,12 @@ def sample_unique_pool(births: dict[int, dict], n_pool: int, rng: random.Random)
 
 
 def score_gen_pooled(
-    run_dir: Path, n_pool: int, proportion: float, n_workers: int, seed: int,
-    backend: str = "cpu",
+    run_dir: Path, n_pool: int, proportion: float, seed: int,
 ) -> tuple[list[int], list[float]]:
     rng = random.Random(seed)
     with open(run_dir / "config.json") as f:
         exp_dict = json.load(f)["experiment"]
     exp_cfg = exp_cfg_from_dict(exp_dict)
-    exp_cfg.payoff.n_workers = n_workers
-    exp_cfg.payoff.backend = backend
     spec = REWARDS[exp_cfg.reward]
 
     births = load_births(str(run_dir), up_to_gen=last_gen(str(run_dir)))
@@ -146,17 +143,13 @@ def main():
     parser.add_argument("run_id", help="Run dir or bare run id, e.g. 20260910_181415")
     parser.add_argument("--n-pool", type=int, required=True, help="Number of codes in the pool")
     parser.add_argument("--proportion", type=float, required=True, help="Fraction of each generation's survivors to score")
-    parser.add_argument("--workers", type=int, default=1, help="Parallel processes for matchup evaluation")
-    parser.add_argument("--backend", choices=["cpu", "cuda"], default="cpu",
-                        help="Payoff backend; cuda needs a GPU (treemo only)")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
 
 
     run_dir = resolve_run_dir(args.run_id)
-    gens, scores = score_gen_pooled(run_dir, args.n_pool, args.proportion, args.workers, args.seed,
-                                    args.backend)
+    gens, scores = score_gen_pooled(run_dir, args.n_pool, args.proportion, args.seed)
     out_path = run_dir / "score_gen_pooled.svg"
     plot(gens, scores, out_path, f"{run_dir.name} — pool {args.n_pool}, proportion {args.proportion}")
     print(out_path)

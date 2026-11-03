@@ -17,8 +17,8 @@ Adding a population computes only the missing blocks (new vs. each member).
 
 Usage:
     python -m store.tournament create --dir <d> --reward <name> --from-pop <pop_id>
-                                      [--store DIR] [--workers N] [--self]
-    python -m store.tournament add    --dir <d> <pop_id> [...] [--workers N] [--self]
+                                      [--store DIR] [--self]
+    python -m store.tournament add    --dir <d> <pop_id> [...] [--self]
     python -m store.tournament ratings --dir <d>
 """
 
@@ -55,9 +55,7 @@ def create_tournament(
     reward_name: str,
     from_pop: str,
     store_dir: str,
-    n_workers: int = 1,
     include_self: bool = False,
-    backend: str = "cpu",
 ) -> None:
     spec = REWARDS[reward_name]
     manifest, _ = load(store_dir, from_pop)
@@ -80,25 +78,27 @@ def create_tournament(
     with open(_doc_path(tournament_dir), "w") as f:
         json.dump(doc, f, indent=2)
 
-    add_populations(tournament_dir, [from_pop], n_workers, include_self, backend)
+    add_populations(tournament_dir, [from_pop], include_self)
 
 
 def add_populations(
     tournament_dir: str,
     pop_ids: list[str],
-    n_workers: int = 1,
     include_self: bool = False,
-    backend: str = "cpu",
 ) -> None:
     doc = load_tournament(tournament_dir)
     spec = REWARDS[doc["reward"]]
+    if spec.zero_sum != doc["zero_sum"]:
+        raise ValueError(
+            f"reward {doc['reward']!r} is now registered zero_sum={spec.zero_sum}, but this tournament "
+            f"was computed with zero_sum={doc['zero_sum']}: its blocks come from a different definition. "
+            f"Start a new tournament."
+        )
     store_dir = doc["store_dir"]
     blocks_dir = Path(tournament_dir) / "blocks"
 
     exp_cfg = exp_cfg_from_dict(doc["experiment_config"])
     exp_cfg.reward = doc["reward"]
-    exp_cfg.payoff.n_workers = n_workers
-    exp_cfg.payoff.backend = backend
 
     populations: dict[str, tuple[list[int], list]] = {}
 
@@ -136,8 +136,6 @@ def add_populations(
             "row_pop": row_pop,
             "col_pop": col_pop,
             "reward": doc["reward"],
-            "n_workers": n_workers,
-            "backend": backend,
             "elapsed_s": round(elapsed, 4),
             "computed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
@@ -170,28 +168,22 @@ def main():
     c.add_argument("--reward", required=True, choices=sorted(REWARDS))
     c.add_argument("--from-pop", required=True)
     c.add_argument("--store", default="outputs/store/populations")
-    c.add_argument("--workers", type=int, default=1)
     c.add_argument("--self", action="store_true", dest="include_self",
                    help="also compute self-play blocks")
-    c.add_argument("--backend", choices=["cpu", "cuda"], default="cpu",
-                   help="payoff backend; cuda needs a GPU (treemo only)")
 
     a = sub.add_parser("add", help="add populations, computing only missing blocks")
     a.add_argument("pop_ids", nargs="+")
     a.add_argument("--dir", required=True)
-    a.add_argument("--workers", type=int, default=1)
     a.add_argument("--self", action="store_true", dest="include_self")
-    a.add_argument("--backend", choices=["cpu", "cuda"], default="cpu")
 
     r = sub.add_parser("ratings", help="derive ratings.json from the stored blocks")
     r.add_argument("--dir", required=True)
 
     args = parser.parse_args()
     if args.cmd == "create":
-        create_tournament(args.dir, args.reward, args.from_pop, args.store,
-                          args.workers, args.include_self, args.backend)
+        create_tournament(args.dir, args.reward, args.from_pop, args.store, args.include_self)
     elif args.cmd == "add":
-        add_populations(args.dir, args.pop_ids, args.workers, args.include_self, args.backend)
+        add_populations(args.dir, args.pop_ids, args.include_self)
     elif args.cmd == "ratings":
         from analysis.tournament_ratings import write_ratings
 

@@ -1,5 +1,5 @@
 """
-Unified generation loop.
+Unified generation loop, on the GPU.
 
 One run = repeated _step() over an explicit RunState:
   1. create   — seeded genomes (gen 0), fresh randoms, genetic offspring
@@ -8,8 +8,16 @@ One run = repeated _step() over an explicit RunState:
                 thins the prospective population before any matchup is spent on
                 it. `dedupe` lives here — duplicates cost nothing to discover.
   3. evaluate — PayoffEngine.extend() grows the square self-play payoff matrix
-  4. select   — RunConfig.selection: each step maps (payoff, genomes) ->
-                surviving indices
+  4. select   — RunConfig.selection: each step maps (payoff, population, rng)
+                -> surviving indices
+
+The population and its payoff matrix stay on the device for the whole run;
+only the records to log (surviving newborns, survivor ids and scores, the
+matrix every payoff_every generations) come back to the host.
+
+Randomness comes from DeviceRng(seed, gen) (core/rng.py): a pure function of
+the seed and the generation, so a resumed run draws exactly what the
+uninterrupted one did and checkpoints hold no generator state.
 
 _step is a pure function of (state, rng): a future multi-pool/island driver
 can hold several RunStates and migrate individuals between them without
@@ -17,27 +25,25 @@ touching this module.
 """
 
 import json
-import os
 import operator
-import random
+import os
 import time
-from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 
 from config import RunConfig
 from core.config_keys import compat_key
-from core.types import Individual, Program
+from core.device import cupy
+from core.population import METHODS, Population
+from core.rng import DeviceRng
+from core.types import Program
 from creation import build_creator
-from creation.base import Creator
-from creation.offspring import make_offspring
-from interpreters import build_interpreter
 from loggers.experiment_logger import ExperimentLogger
-from loggers.run_io import last_gen, load_births, load_checkpoint, reconstruct_population
 from loggers.rewind import rewind_run
+from loggers.run_io import last_gen, load_checkpoint, max_birth_id, reconstruct_population
 from rewards.base import build_reward
 from rewards.payoff import PayoffEngine
 from selection.base import SelectFn, build_selection
@@ -47,14 +53,14 @@ from selection.base import SelectFn, build_selection
 class RunState:
     gen: int  # next generation to run
     next_id: int
-    pop: list[Individual]
-    payoff: np.ndarray  # square self-play matrix, rows/cols aligned with pop
+    pop: Population
+    payoff: object  # device int32 square self-play matrix, rows/cols aligned with pop
 
 
 @dataclass
 class GenRecord:
     metrics: dict
-    births: list[Individual]
+    births: Population  # newborns to persist
     survivor_ids: list[int]
     scores: list[int]
 
@@ -71,94 +77,86 @@ def _stat_block(prefix: str, row_sums: np.ndarray) -> dict:
     }
 
 
+def _by_method(codes: np.ndarray) -> dict:
+    counts = np.bincount(codes, minlength=len(METHODS))
+    return {METHODS[m]: int(c) for m, c in enumerate(counts) if c}
+
+
+def _now() -> float:
+    cupy().cuda.Device().synchronize()  # stage timings count the device work
+    return time.time()
+
+
 def _step(
     state: RunState,
     cfg: RunConfig,
-    creator: Creator,
-    interp,
+    creator,
     engine: PayoffEngine,
     selectors: Sequence[SelectFn],
     pre_selectors: Sequence[SelectFn] = (),
-    seed_genomes: Sequence[Program] = (),
+    seeded: Optional[Population] = None,
+    rng: Optional[DeviceRng] = None,
 ) -> tuple[RunState, GenRecord]:
-    t0 = time.time()
-    old_pop = state.pop
+    cp = cupy()
+    rng = rng if rng is not None else DeviceRng(cfg.seed, state.gen)
+    t0 = _now()
+    old_pop, old_payoff = state.pop, state.payoff
     n_old = len(old_pop)
     next_id = state.next_id
-    new_inds: list[Individual] = []
 
-    for genome in seed_genomes:
-        new_inds.append(Individual(next_id, list(genome), "seeded", [], state.gen))
-        next_id += 1
-
+    parts = []
+    if seeded is not None and len(seeded):
+        seeded.ids = np.arange(next_id, next_id + len(seeded), dtype=np.int64)
+        seeded.born_gen[:] = state.gen
+        next_id += len(seeded)
+        parts.append(seeded)
     n_random = cfg.n_random + (cfg.n_init if state.gen == 0 and n_old == 0 else 0)
-    for _ in range(n_random):
-        new_inds.append(Individual(next_id, creator.random(), "random", [], state.gen))
-        next_id += 1
-
-    if n_old > 0:
-        offspring, methods, parent_idx = make_offspring(
-            creator=creator,
-            survivors=[ind.genome for ind in old_pop],
-            n_offspring=cfg.n_offspring,
-            gc=cfg.experiment.genetics,
-            interp=interp,
-        )
-        for genome, method, pidx in zip(offspring, methods, parent_idx):
-            parents = [old_pop[i].id for i in pidx]
-            new_inds.append(Individual(next_id, genome, method, parents, state.gen))
-            next_id += 1
-    else:
-        # bootstrap: nothing to breed from yet (seeded genomes only join the
-        # breeding pool once they survive into the next generation)
-        for _ in range(cfg.n_offspring):
-            new_inds.append(Individual(next_id, creator.random(), "random", [], state.gen))
-            next_id += 1
+    # Without survivors, the offspring slots are filled with random trees: nothing
+    # to breed from yet (seeded genomes join the breeding pool next generation).
+    created = creator.create(old_pop, n_random, cfg.n_offspring, rng, state.gen, next_id)
+    next_id += len(created)
+    parts.append(created)
+    new = Population.concat(parts)
 
     # Pre-evaluation selection, on genomes alone: thins the prospective
-    # population before any matchup is spent on it. Positions index
-    # old_pop + new_inds; survivors stay sorted, so the old block keeps its
-    # order and state.payoff can simply be reindexed by the old survivors.
-    old_payoff = state.payoff
+    # population before any matchup is spent on it. Survivors stay sorted, so
+    # the old block keeps its order and the payoff is simply reindexed.
     n_removed_by_pre_step: list[int] = []
     if pre_selectors:
-        prospective = old_pop + new_inds
+        prospective = Population.concat([old_pop, new])
         alive = np.arange(len(prospective))
+        current = prospective
         for select in pre_selectors:
-            idx = select(None, [prospective[i].genome for i in alive.tolist()])
+            idx = cp.asnumpy(cp.asarray(select(None, current, rng))).astype(np.int64)
             n_removed_by_pre_step.append(int(len(alive) - len(idx)))
             alive = alive[idx]
+            current = current.take(idx)
         old_keep = alive[alive < n_old]
         new_keep = alive[alive >= n_old] - n_old
         if len(old_keep) < n_old:
-            old_pop = [old_pop[i] for i in old_keep.tolist()]
-            old_payoff = old_payoff[np.ix_(old_keep, old_keep)]
-        new_inds = [new_inds[i] for i in new_keep.tolist()]
+            old_pop = old_pop.take(old_keep)
+            old_payoff = old_payoff[cp.ix_(cp.asarray(old_keep), cp.asarray(old_keep))]
+        new = new.take(new_keep)
 
-    pop = old_pop + new_inds
-    t_create = time.time()
+    pop = Population.concat([old_pop, new])
+    t_create = _now()
 
-    payoff = engine.extend(
-        old_payoff,
-        [ind.genome for ind in old_pop],
-        [ind.genome for ind in new_inds],
-    )
-    t_payoff = time.time()
-    payout_sums = payoff.sum(axis=1)  # ground truth, before selection thins it
+    payoff = engine.extend(old_payoff, pop, len(old_pop))
+    t_payoff = _now()
+    payout_sums = cp.asnumpy(payoff.sum(axis=1, dtype=cp.int64))  # ground truth, before selection thins it
 
     n_removed_by_step: list[int] = []
     for select in selectors:
-        idx = select(payoff, [ind.genome for ind in pop])
+        idx = cp.asarray(select(payoff, pop, rng)).astype(cp.int64)
         n_removed_by_step.append(int(len(pop) - len(idx)))
-        pop = [pop[i] for i in idx.tolist()]
-        payoff = payoff[np.ix_(idx, idx)]
-    t_select = time.time()
+        pop = pop.take(idx)
+        payoff = payoff[cp.ix_(idx, idx)]
+    t_select = _now()
 
-    new_ids = {ind.id for ind in new_inds}
-    new_surviving = [ind for ind in pop if ind.id in new_ids]
-    births = list(new_inds) if cfg.log_all_births else new_surviving
-    survivor_ids = [ind.id for ind in pop]
-    scores = [int(s) for s in payoff.sum(axis=1)]
+    new_ids = set(new.ids.tolist())
+    surviving_new = np.array([i for i, pid in enumerate(pop.ids.tolist()) if pid in new_ids], dtype=np.int64)
+    births = new if cfg.log_all_births else pop.take(surviving_new)
+    scores = cp.asnumpy(payoff.sum(axis=1, dtype=cp.int64))
 
     metrics = {
         "gen": state.gen,
@@ -167,23 +165,23 @@ def _step(
         "payoff_s": round(t_payoff - t_create, 4),
         "select_s": round(t_select - t_payoff, 4),
         "pop_size": len(pop),
-        "n_added": len(new_inds),
-        "n_added_by_method": dict(Counter(ind.method for ind in new_inds)),
+        "n_added": len(new),
+        "n_added_by_method": _by_method(new.method),
         "n_removed_pre": sum(n_removed_by_pre_step),
         "n_removed_by_pre_step": n_removed_by_pre_step,
-        "n_removed": (len(old_pop) + len(new_inds)) - len(pop),
+        "n_removed": (len(old_pop) + len(new)) - len(pop),
         "n_removed_by_step": n_removed_by_step,
-        "n_survived_new": len(new_surviving),
-        "n_survived_new_by_method": dict(Counter(ind.method for ind in new_surviving)),
-        **_stat_block("payoff", payoff.sum(axis=1)),
+        "n_survived_new": len(surviving_new),
+        "n_survived_new_by_method": _by_method(pop.method[surviving_new]),
+        **_stat_block("payoff", scores),
         **_stat_block("payout", payout_sums),
     }
 
     new_state = RunState(state.gen + 1, next_id, pop, payoff)
-    return new_state, GenRecord(metrics, births, survivor_ids, scores)
+    return new_state, GenRecord(metrics, births, pop.ids.tolist(), [int(s) for s in scores])
 
 
-def _resume_state(cfg: RunConfig) -> RunState:
+def _resume_state(cfg: RunConfig, engine: PayoffEngine) -> RunState:
     with open(Path(cfg.out_dir) / "config.json") as f:
         saved = json.load(f)
     saved_key = compat_key(saved["experiment"])
@@ -193,37 +191,29 @@ def _resume_state(cfg: RunConfig) -> RunState:
             f"Interpreter compat_key mismatch: run dir was produced with {saved_key}, "
             f"current config gives {current_key}"
         )
+    # The persisted seed drives every generation's draws (DeviceRng(seed, gen)).
+    cfg.seed = saved["seed"]
 
     if cfg.resume_gen is not None:
-        return _resume_generation_state(cfg, saved)
+        return _resume_generation_state(cfg, saved, engine)
 
     checkpoint = load_checkpoint(cfg.out_dir)
     records = reconstruct_population(cfg.out_dir)
-    record_ids = [r["id"] for r in records]
-    if record_ids != checkpoint["pop_ids"]:
+    if [r["id"] for r in records] != checkpoint["pop_ids"]:
         raise ValueError("Checkpoint pop_ids do not match the reconstructed survivors")
-
-    pop = [
-        Individual(r["id"], r["genome"], r["method"], r["parents"], r["born_gen"])
-        for r in records
-    ]
-    random.setstate(checkpoint["py_random_state"])
-    np.random.set_state(checkpoint["np_random_state"])
-    return RunState(checkpoint["gen"], checkpoint["next_id"], pop, checkpoint["payoff"])
+    payoff = cupy().asarray(np.asarray(checkpoint["payoff"], dtype=np.int32))
+    return RunState(checkpoint["gen"], checkpoint["next_id"], _population(records), payoff)
 
 
-
-def _resume_generation_state(cfg: RunConfig, saved: dict) -> RunState:
-    """Rebuild a historical population without changing either global RNG."""
+def _resume_generation_state(cfg: RunConfig, saved: dict, engine: PayoffEngine) -> RunState:
+    """Rebuild a historical population; later generations draw from DeviceRng(seed, gen) as usual."""
     root = Path(cfg.out_dir)
     records = reconstruct_population(cfg.out_dir, cfg.resume_gen)
     ids = [r["id"] for r in records]
-    pop = [Individual(r["id"], r["genome"], r["method"], r["parents"], r["born_gen"])
-           for r in records]
+    pop = _population(records)
 
     # Preserve the ID high-water mark, including births discarded by rollback.
-    births = load_births(cfg.out_dir, last_gen(cfg.out_dir))
-    next_id = max(births, default=-1) + 1
+    next_id = max_birth_id(cfg.out_dir, last_gen(cfg.out_dir)) + 1
     if (root / "checkpoint.pkl").exists():
         next_id = max(next_id, load_checkpoint(cfg.out_dir)["next_id"])
 
@@ -246,23 +236,33 @@ def _resume_generation_state(cfg: RunConfig, saved: dict) -> RunState:
                 raise ValueError("Historical payoff IDs do not match survivors")
         if payoff.shape != (len(pop), len(pop)) or not np.isfinite(payoff).all():
             raise ValueError("Historical payoff must be a finite square survivor matrix")
+        payoff = cupy().asarray(payoff.astype(np.int32))
     else:
-        genomes = [ind.genome for ind in pop]
-        with PayoffEngine(cfg.experiment, build_reward(cfg.experiment)) as engine:
-            payoff = engine.matrix(genomes, genomes)
+        payoff = engine.square(pop)
     return RunState(cfg.resume_gen + 1, next_id, pop, payoff)
+
+
+def _population(records: list[dict]) -> Population:
+    if not records:
+        return Population.empty()
+    return Population.from_records(records)
 
 
 def _checkpoint(state: RunState) -> dict:
     return {
-        "format_version": 1,
+        "format_version": 2,
         "gen": state.gen,
         "next_id": state.next_id,
-        "pop_ids": [ind.id for ind in state.pop],
-        "payoff": state.payoff,
-        "py_random_state": random.getstate(),
-        "np_random_state": np.random.get_state(),
+        "pop_ids": state.pop.ids.tolist(),
+        "payoff": cupy().asnumpy(state.payoff),
     }
+
+
+def _seeded(genomes: Sequence[Program]) -> Optional[Population]:
+    if not genomes:
+        return None
+    n = len(genomes)
+    return Population.from_genomes(genomes, np.zeros(n, dtype=np.int64), "seeded", [[] for _ in range(n)], 0)
 
 
 def run(cfg: RunConfig) -> None:
@@ -284,44 +284,40 @@ def run(cfg: RunConfig) -> None:
     if not resuming:
         if cfg.seed is None:
             cfg.seed = int.from_bytes(os.urandom(4), "little")
-        random.seed(cfg.seed)
-        np.random.seed(cfg.seed)
         if cfg.seed_populations:
             from store.population_store import load_seed_genomes
 
             seed_genomes, provenance = load_seed_genomes(cfg.store_dir, cfg.seed_populations)
             meta_extra["seeded_provenance"] = provenance
 
-    creator = build_creator(cfg.experiment)
-    interp = build_interpreter(cfg.experiment)
     reward = build_reward(cfg.experiment)
     pre_selectors = build_selection(cfg.pre_selection, pre=True)
     selectors = build_selection(cfg.selection)
 
-    if resuming:
-        state = _resume_state(cfg)
-    else:
-        state = RunState(gen=0, next_id=0, pop=[], payoff=np.zeros((0, 0), dtype=int))
-
-    if cfg.resume_gen is not None:
-        backup = rewind_run(cfg.out_dir, cfg.resume_gen, _checkpoint(state))
-        meta_extra["rollback_backup"] = str(backup)
-        print(f"Restored generation {cfg.resume_gen}; backup: {backup}")
-
-    logger = ExperimentLogger(cfg.out_dir, cfg, **meta_extra)
-    end_gen = state.gen + cfg.n_iter
-
     with PayoffEngine(cfg.experiment, reward) as engine:
+        creator = build_creator(cfg.experiment, engine.runtime)
+        if resuming:
+            state = _resume_state(cfg, engine)
+        else:
+            state = RunState(gen=0, next_id=0, pop=Population.empty(),
+                             payoff=cupy().zeros((0, 0), dtype=cupy().int32))
+
+        if cfg.resume_gen is not None:
+            backup = rewind_run(cfg.out_dir, cfg.resume_gen, _checkpoint(state))
+            meta_extra["rollback_backup"] = str(backup)
+            print(f"Restored generation {cfg.resume_gen}; backup: {backup}")
+
+        logger = ExperimentLogger(cfg.out_dir, cfg, **meta_extra)
+        end_gen = state.gen + cfg.n_iter
+
         while state.gen < end_gen:
             gen = state.gen
-            genomes = seed_genomes if gen == 0 else ()
-            state, rec = _step(
-                state, cfg, creator, interp, engine, selectors, pre_selectors, genomes
-            )
+            seeded = _seeded(seed_genomes) if gen == 0 else None
+            state, rec = _step(state, cfg, creator, engine, selectors, pre_selectors, seeded)
 
             save_payoff = None
             if cfg.payoff_every > 0 and (gen % cfg.payoff_every == 0 or gen == end_gen - 1):
-                save_payoff = state.payoff
+                save_payoff = cupy().asnumpy(state.payoff)
             logger.log_generation(
                 gen, rec.metrics, rec.births, rec.survivor_ids, rec.scores, save_payoff
             )
@@ -332,7 +328,7 @@ def run(cfg: RunConfig) -> None:
                 f"gen {gen:>6} | pop {m['pop_size']:>5} | "
                 f"+{m['n_added']} -{m['n_removed']} "
                 f"[new {m['n_survived_new']}] | "
-                f"payoff {m['payoff_s']:.2f}s select {m['select_s']:.2f}s"
+                f"create {m['create_s']:.2f}s payoff {m['payoff_s']:.2f}s select {m['select_s']:.2f}s"
             )
 
     if cfg.publish_label:

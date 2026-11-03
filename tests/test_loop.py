@@ -20,7 +20,7 @@ TIME_FIELDS = ("t", "create_s", "payoff_s", "select_s")
 
 def _exp() -> ExperimentConfig:
     return ExperimentConfig(
-        interpreter="treemo_py",
+        interpreter="treemo",
         reward="placeholder",
         treemo=TreemoConfig(max_step=10, tree_size=15),
     )

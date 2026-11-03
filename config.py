@@ -3,25 +3,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-# --- Code generation config ---
-
-@dataclass
-class CodeConfig:
-    code_length: int = 500
-    min_val: int = -500
-    max_val: int = 1_000
-
-@dataclass
-class RuleConfig:
-    code_length: int = 50
-    min_val: int = 0
-    max_val: int = 100
-
-# --- Interpreter-specific config ---
-
-@dataclass
-class IconfractranConfig:
-    max_step: int = 200
+# --- Interpreter config ---
 
 @dataclass
 class TreemoConfig:
@@ -36,33 +18,16 @@ class TreemoConfig:
     #   first_mode=False → continue to the next rule in sequence
     first_mode: bool = False
 
-@dataclass
-class SubleqConfig:
-    library_path: str = "./interpreters/subleq/libsubleq.so" # Should this be hardcoded in the subleq code ?
-    max_output_length: int = 2_000
-    max_iter: int = 20_000
-
-# --- Payoff / parallelism config ---
+# --- Payoff config (everything runs on the GPU) ---
 
 @dataclass
 class PayoffConfig:
-    # 1 = sequential, >1 = use ProcessPoolExecutor
-    n_workers: int = 10
-    # Matchups per CPU task: the block is cut into tiles this size, run in shuffled order.
-    chunksize: int = 2000
-    # Where rewards are scored (same reward functions, same results):
-    # "cpu": tiles of the block over n_workers processes, any interpreter.
-    # "cuda": each block as one GPU batch (treemo only; needs CuPy, see
-    # interpreters/treemo_gpu/README.md).
-    backend: str = "cpu"
-    # Device memory per launch; larger blocks are split into several launches.
+    # Device memory of one Treemo execution launch (states and scan
+    # watermarks); larger batches are split into several launches.
     gpu_memory_mb: int = 1024
-    # Matchups scored per GPU batch; bigger blocks go in tiles, so memory stays
+    # Matchups scored per batch; bigger blocks go in tiles, so memory stays
     # bounded (all outputs of a batch stay on the device until it is scored).
     gpu_batch_matchups: int = 1_000_000
-    # Host processes feeding the GPU (each with its own CUDA context, ~1.5 GiB
-    # of device memory per 1M-matchup batch); 1 = in the calling process.
-    gpu_workers: int = 1
 
 
 # --- Selection step configs (ordered pipeline applied each generation) ---
@@ -156,15 +121,10 @@ class NashStepConfig:
 
 @dataclass
 class GeneticsConfig:
-    # Per-integer probability for code; per-original-node event probability for trees.
+    # Per-original-node event probability (subtree); per-tree probability (leaf).
     mutation_rate: float = 0.05
     crossover_prob: float = 0.8
     homoiconic_prob: float = 0.3
-
-    # Integer-program operator selection ("uniform" | "creep")
-    code_mutation_op: str = "uniform"
-    # ("single_point" | "two_point" | "uniform")
-    code_crossover_op: str = "two_point"
 
     # "subtree": uniform delete/swap/insert/regenerate events; "leaf": legacy operator.
     tree_mutation_op: str = "subtree"
@@ -176,28 +136,23 @@ class GeneticsConfig:
 
 @dataclass
 class ExperimentConfig:
-    ### Which interpreter / reward to use
-    # subleq | iconfractran | treemo | treemo_py
+    # Treemo is the only interpreter; the field stays so compat keys of
+    # stored populations (core/config_keys.py) keep their values.
     interpreter: str = "treemo"
-    # blind|placeholder|quine_pressure
-    reward: str = "blind" 
+    # a key of rewards.base.REWARDS: blind | placeholder | quine_pressure
+    reward: str = "blind"
 
-    ### Sub-configs
-    subleq: SubleqConfig = field(default_factory=SubleqConfig)
-    iconfractran: IconfractranConfig = field(default_factory=IconfractranConfig)
     treemo: TreemoConfig = field(default_factory=TreemoConfig)
-
     payoff: PayoffConfig = field(default_factory=PayoffConfig)
     genetics: GeneticsConfig = field(default_factory=GeneticsConfig)
-
-    code: CodeConfig = field(default_factory=CodeConfig)
-    # code: RuleConfig = field(default_factory=RuleConfig)
 
 
 # --- Random baseline experiment config ---
 
 @dataclass
 class RandomBaselineConfig:
+    # seed of the random trees (reference population and every pool)
+    seed: int = 0
     n_ref: int = 10**1
     n_tested: int = 10**7
     n_grain: int = 500

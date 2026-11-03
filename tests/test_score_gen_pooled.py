@@ -54,7 +54,7 @@ def test_scores_are_reused_for_identical_codes_during_one_run(tmp_path, monkeypa
     monkeypatch.setattr(pooled, "generations", lambda run_dir: [0, 1])
     monkeypatch.setattr(pooled, "load_survivors", lambda run_dir, gen: {"ids": [1, 2] if gen == 0 else [2, 3]})
 
-    gens, scores = pooled.score_gen_pooled(tmp_path, 1, 1.0, 1, 0)
+    gens, scores = pooled.score_gen_pooled(tmp_path, 1, 1.0, 0)
 
     assert evaluated == [[1], [2]]
     assert gens == [0, 0, 1, 1]
