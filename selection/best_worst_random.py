@@ -2,41 +2,35 @@
 
 import operator
 
-import numpy as np
+from core.device import cupy
+from selection.knn_novelty import rank_descending
 
 
-def best_worst_random_selection(
-    payoff: np.ndarray, n_best: int, n_worst: int, n_rand: int
-) -> np.ndarray:
+def best_worst_random_selection(payoff, n_best: int, n_worst: int, n_rand: int, rng):
     """Keep disjoint groups by total payoff against the full input population.
 
     Scores are payoff row-sums, as in cap_top. Pick the best first, then the
     worst among those left, then sample uniformly without replacement from
-    the remainder. Break score ties using NumPy's global RNG for reproducible
-    seeded runs. Return sorted, unique indices; oversized quotas keep everyone.
+    the remainder. Break score ties randomly. Return sorted, unique indices;
+    oversized quotas keep everyone.
     """
-    payoff = np.asarray(payoff, dtype=np.float64)
+    cp = cupy()
+    payoff = cp.asarray(payoff)
     if payoff.ndim != 2 or payoff.shape[0] != payoff.shape[1]:
         raise ValueError("payoff must be a square 2D array")
-    if not np.isfinite(payoff).all():
-        raise ValueError("payoff must contain only finite values")
     n_best, n_worst, n_rand = map(operator.index, (n_best, n_worst, n_rand))
     if min(n_best, n_worst, n_rand) < 0:
         raise ValueError("n_best, n_worst, and n_rand must be non-negative")
-
     n = len(payoff)
     if n_best + n_worst + n_rand >= n:
-        return np.arange(n)
+        return cp.arange(n, dtype=cp.int64)
     if n_best + n_worst + n_rand == 0:
-        return np.empty(0, dtype=int)
+        return cp.zeros(0, dtype=cp.int64)
 
-    scores = payoff.sum(axis=1)
-    shuffled = np.random.permutation(n)
-    ranked = shuffled[np.argsort(-scores[shuffled], kind="stable")]
+    ranked = rank_descending(payoff.sum(axis=1, dtype=cp.int64), rng)
     best = ranked[:n_best]
-    # Avoid a [-0:] slice, which would select the entire population.
-    split = n - n_worst
+    split = n - n_worst  # avoids a [-0:] slice, which would be everyone
     worst = ranked[split:]
     remaining = ranked[n_best:split]
-    randoms = np.random.choice(remaining, size=n_rand, replace=False)
-    return np.sort(np.concatenate([best, worst, randoms]))
+    randoms = remaining[rng.permutation(len(remaining))[:n_rand]]
+    return cp.sort(cp.concatenate([best, worst, randoms]))
