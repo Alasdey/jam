@@ -37,10 +37,15 @@ def _similarity(output, reference):
     return _dp_lcs(output, reference) / len(reference) if output and reference else 0.0
 
 
+def _game(it, x, y):
+    question = it.run(y, x)[0]
+    return int(it.run(x, question)[0] == it.run(y, question)[0])
+
+
 # Each reward written one matchup at a time, as the rewards were defined
 # before they became batched: the batched versions must agree exactly.
 SCALAR = {
-    "blind": lambda it, a, b: 0 if it.run(b, a)[0] == it.run(a, b)[0] else 1,
+    "blind": lambda it, a, b: _game(it, a, b) - _game(it, b, a),
     "placeholder": lambda it, a, b: int(np.sign(
         len(it.run(a, [0, 1, 2, 3, 4, 5])[0]) - len(it.run(b, [0, 1, 2, 3, 4, 5])[0]))),
     "quine_pressure": lambda it, a, b: int(np.sign(
@@ -57,11 +62,12 @@ def test_batched_rewards_match_their_scalar_definitions(interp, name):
     assert np.asarray(got).tolist() == expected
 
 
-def test_blind_reward_compares_outputs(interp):
-    a, b = _random_programs(2, seed=3)
-    assert play_one(blind_reward, interp, a, a) == 0
-    differ = interp.run(b, a)[0] != interp.run(a, b)[0]
-    assert play_one(blind_reward, interp, a, b) == int(differ)
+def test_blind_reward_antisymmetric(interp):
+    progs = _random_programs(8, seed=3)
+    for a in progs:
+        assert play_one(blind_reward, interp, a, a) == 0
+        for b in progs:
+            assert play_one(blind_reward, interp, a, b) == -play_one(blind_reward, interp, b, a)
 
 
 def test_placeholder_reward_antisymmetric(interp):
