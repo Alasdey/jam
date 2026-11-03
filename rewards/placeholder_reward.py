@@ -1,15 +1,14 @@
-
 import numpy as np
 
 from core.matchups import Matchups
 
-STAPLE = [0, 1, 2, 3, 4, 5]
+# A fixed balanced input (two nested nodes and a leaf): Treemo tapes hold only 0 and 1.
+STAPLE = [1, 1, 0, 0, 1, 0]
 
 
 def reward(m: Matchups) -> np.ndarray:
     """
-    Reward obtained by playing both side of the subleq game with deterministic reward -1, 0 or 1
-    The more the better for A 
+    Both programs run on the same fixed input; the longer output wins: +1, -1 or 0.
     """
     staple = m.const(STAPLE)
     return np.sign(m.run(m.a, staple).length() - m.run(m.b, staple).length())

@@ -3,10 +3,11 @@ import random
 import numpy as np
 import pytest
 
-from core.matchups import HostMatchups, block, play_one
+from tests.reference.host_matchups import HostMatchups, block, play_one
 from creation.treemo import gen_tree
 from interpreters.treemo_py.treemo import TreemoInterpreter
 from rewards.base import REWARDS
+from rewards.placeholder_reward import STAPLE
 
 blind_reward = REWARDS["blind"].fn
 placeholder_reward = REWARDS["placeholder"].fn
@@ -46,7 +47,7 @@ def _game(it, x, y):
 SCALAR = {
     "blind": _game,
     "placeholder": lambda it, a, b: int(np.sign(
-        len(it.run(a, [0, 1, 2, 3, 4, 5])[0]) - len(it.run(b, [0, 1, 2, 3, 4, 5])[0]))),
+        len(it.run(a, STAPLE)[0]) - len(it.run(b, STAPLE)[0]))),
     "quine_pressure": lambda it, a, b: int(np.sign(
         _similarity(it.run(a, b)[0], a) - _similarity(it.run(b, a)[0], b))),
 }
