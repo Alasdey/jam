@@ -9,5 +9,5 @@ def game(m: Matchups, x, y):
 
 
 def reward(m: Matchups) -> np.ndarray:
-    """A's game against B, 0 or 1: not zero-sum."""
-    return game(m, m.a, m.b)
+    """A's game minus B's: zero-sum by construction."""
+    return game(m, m.a, m.b) - game(m, m.b, m.a)
