@@ -25,7 +25,7 @@ class RewardSpec:
 
 
 REWARDS: dict[str, RewardSpec] = {
-    "blind": RewardSpec("blind", blind_reward, zero_sum=True),
+    "blind": RewardSpec("blind", blind_reward, zero_sum=False),
     "placeholder": RewardSpec("placeholder", placeholder_reward, zero_sum=True),
     "quine_pressure": RewardSpec("quine_pressure", quine_pressure_reward, zero_sum=True),
 }

@@ -38,14 +38,13 @@ def _similarity(output, reference):
 
 
 def _game(it, x, y):
-    question = it.run(y, x)[0]
-    return int(it.run(x, question)[0] == it.run(y, question)[0])
+    return int(it.run(x, it.run(x, y)[0])[0] == it.run(y, x)[0])
 
 
 # Each reward written one matchup at a time, as the rewards were defined
 # before they became batched: the batched versions must agree exactly.
 SCALAR = {
-    "blind": lambda it, a, b: _game(it, a, b) - _game(it, b, a),
+    "blind": _game,
     "placeholder": lambda it, a, b: int(np.sign(
         len(it.run(a, [0, 1, 2, 3, 4, 5])[0]) - len(it.run(b, [0, 1, 2, 3, 4, 5])[0]))),
     "quine_pressure": lambda it, a, b: int(np.sign(
@@ -62,12 +61,11 @@ def test_batched_rewards_match_their_scalar_definitions(interp, name):
     assert np.asarray(got).tolist() == expected
 
 
-def test_blind_reward_antisymmetric(interp):
+def test_blind_reward_is_a_win_or_nothing(interp):
     progs = _random_programs(8, seed=3)
-    for a in progs:
-        assert play_one(blind_reward, interp, a, a) == 0
-        for b in progs:
-            assert play_one(blind_reward, interp, a, b) == -play_one(blind_reward, interp, b, a)
+    values = {play_one(blind_reward, interp, a, b) for a in progs for b in progs}
+    assert values <= {0, 1}
+    assert not REWARDS["blind"].zero_sum
 
 
 def test_placeholder_reward_antisymmetric(interp):

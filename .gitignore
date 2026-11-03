@@ -6,6 +6,7 @@ rewards/*
 !rewards/wrapper.py
 !rewards/base.py
 !rewards/payoff.py
+!rewards/blind_reward.py
 libsubleq.so
 outputs*
 analysis/out/
