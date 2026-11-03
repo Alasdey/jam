@@ -10,7 +10,7 @@ from config import (
 from core.device import cupy
 from core.population import Population
 from core.rng import DeviceRng
-from creation.treemo import gen_tree
+from tests.reference.creation_cpu import gen_tree
 from selection.base import SELECTION_STEPS, build_selection
 from selection.best_worst_random import best_worst_random_selection
 from selection.knn_novelty import _knn_novelty_distances, knn_novelty_selection

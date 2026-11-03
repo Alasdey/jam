@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from tests.reference.host_matchups import HostMatchups, block, play_one
-from creation.treemo import gen_tree
+from tests.reference.creation_cpu import gen_tree
 from interpreters.treemo_py.treemo import TreemoInterpreter
 from rewards.base import REWARDS
 from rewards.placeholder_reward import STAPLE

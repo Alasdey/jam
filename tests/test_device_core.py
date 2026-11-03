@@ -6,7 +6,7 @@ import pytest
 from core.device import cupy
 from core.population import METHODS, Population, pack, unpack
 from core.rng import DeviceRng
-from creation.treemo import gen_tree
+from tests.reference.creation_cpu import gen_tree
 from tests.reference import philox
 
 pytestmark = pytest.mark.cuda

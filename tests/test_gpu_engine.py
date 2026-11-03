@@ -8,7 +8,7 @@ from config import ExperimentConfig
 from core.device import cupy
 from core.matchups import Matchups, lcs_length
 from core.population import Population
-from creation.treemo import gen_tree
+from tests.reference.creation_cpu import gen_tree
 from interpreters.treemo_c.treemo import TreemoInterpreter as CTreemo
 from interpreters.treemo_gpu.rules import extract_rules
 from interpreters.treemo_gpu.treemo import TreemoRuntime
