@@ -11,11 +11,13 @@ seeds.
     python -m sides.selection_tournament --methods mixture lexicase --n-iter 500
     python -m sides.selection_tournament --with-old              # also the four original populations
 
-Nothing is resumed: a run dir left by an interrupted run stops the script
-with an error (delete it to run that seed again). Finished runs are reused: a
-run's pop_id is kept in <runs-dir>/<method>_s<seed>/published.txt, it is not
-run or published again, and only populations not yet in the tournament are
-added (only missing blocks are computed).
+Relaunch the same command after an interruption: finished runs are kept (a
+run's pop_id is in <runs-dir>/<method>_s<seed>/published.txt) and not run
+again, and only populations not yet in the tournament are added (only missing
+blocks are computed). The run that was interrupted continues from its last
+checkpoint; draws depend only on the seed and the generation, so it ends
+exactly as an uninterrupted run would. A run made with another --n-iter is
+refused rather than mixed in.
 
 By default the tournament is a new one, outputs/store/tournaments/selections_v2:
 the original `selections` tournament was computed with an earlier definition
@@ -25,6 +27,7 @@ of blind, so mixing its blocks with new ones would compare different rewards.
 
 import argparse
 import json
+import shutil
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -37,6 +40,7 @@ from config import (
     RunConfig,
 )
 from core.loop import run
+from loggers.run_io import load_checkpoint
 from store.population_store import publish
 from store.tournament import add_populations, create_tournament, load_tournament
 
@@ -58,20 +62,40 @@ OLD_POPULATIONS = {
 }
 
 
+def _generations_done(run_dir: Path) -> int:
+    return load_checkpoint(str(run_dir))["gen"]
+
+
 def run_and_publish(method: str, seed: int, n_iter: int, runs_dir: Path, store_dir: str) -> str:
-    """The pop_id of this (method, seed) run's final population: a fresh run, or the published one."""
+    """The pop_id of this (method, seed) run's final population: kept from before, resumed, or from a fresh run."""
     run_dir = runs_dir / f"{method}_s{seed}"
     published = run_dir / "published.txt"
+    if (run_dir / "config.json").exists():
+        with open(run_dir / "config.json") as f:
+            planned = json.load(f)["n_iter"]
+        if planned != n_iter:
+            raise RuntimeError(f"{run_dir} was made with --n-iter {planned}, not {n_iter}: runs of different "
+                               f"lengths are not comparable; use --n-iter {planned} or another --runs-dir")
     if published.exists():
+        print(f"=== {method}, seed {seed}: done before, kept")
         return published.read_text().strip()
+    if run_dir.exists() and not (run_dir / "checkpoint.pkl").exists():
+        print(f"=== {method}, seed {seed}: interrupted before its first checkpoint; running again")
+        shutil.rmtree(run_dir)
     if run_dir.exists():
-        raise RuntimeError(f"{run_dir} was left by an unfinished run; delete it to run {method} seed {seed} again")
-
-    print(f"\n=== {method}, seed {seed}: {n_iter} generations into {run_dir}")
-    t0 = time.time()
-    run(RunConfig(seed=seed, n_iter=n_iter, selection=METHODS[method](), out_dir=str(run_dir),
-                  publish_label=None, store_dir=store_dir))
-    print(f"=== {method}, seed {seed}: {time.time() - t0:.0f} s")
+        done = _generations_done(run_dir)
+        if done < n_iter:
+            print(f"\n=== {method}, seed {seed}: resuming at generation {done} of {n_iter}")
+            t0 = time.time()
+            run(RunConfig(resume_from=str(run_dir), n_iter=n_iter - done, selection=METHODS[method](),
+                          publish_label=None, store_dir=store_dir))
+            print(f"=== {method}, seed {seed}: {time.time() - t0:.0f} s")
+    else:
+        print(f"\n=== {method}, seed {seed}: {n_iter} generations into {run_dir}")
+        t0 = time.time()
+        run(RunConfig(seed=seed, n_iter=n_iter, selection=METHODS[method](), out_dir=str(run_dir),
+                      publish_label=None, store_dir=store_dir))
+        print(f"=== {method}, seed {seed}: {time.time() - t0:.0f} s")
 
     pop_id = publish(store_dir, f"sel-{method}-s{seed}", str(run_dir))
     published.write_text(pop_id + "\n")

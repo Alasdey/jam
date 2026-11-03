@@ -149,3 +149,14 @@ def test_presets_smoke(tmp_path, name):
     run(cfg)
     assert last_gen(cfg.out_dir) == 1
     assert _read_metrics(cfg.out_dir)[-1]["pop_size"] > 0
+
+
+def test_resume_drops_metrics_of_a_generation_logged_but_not_checkpointed(tmp_path):
+    out = tmp_path / "run"
+    run(_cfg(out, n_iter=3))
+    metrics = out / "metrics.jsonl"
+    lines = metrics.read_text().splitlines(keepends=True)
+    metrics.write_text("".join(lines) + lines[-1].replace('"gen": 2', '"gen": 3'))  # gen 3 logged, then killed
+    run(_cfg(out, n_iter=2, resume_from=str(out)))
+    gens = [json.loads(line)["gen"] for line in metrics.read_text().splitlines()]
+    assert gens == [0, 1, 2, 3, 4]

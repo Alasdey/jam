@@ -198,11 +198,24 @@ def _resume_state(cfg: RunConfig, engine: PayoffEngine) -> RunState:
         return _resume_generation_state(cfg, saved, engine)
 
     checkpoint = load_checkpoint(cfg.out_dir)
+    _trim_metrics(Path(cfg.out_dir), checkpoint["gen"])
     records = reconstruct_population(cfg.out_dir)
     if [r["id"] for r in records] != checkpoint["pop_ids"]:
         raise ValueError("Checkpoint pop_ids do not match the reconstructed survivors")
     payoff = cupy().asarray(np.asarray(checkpoint["payoff"], dtype=np.int32))
     return RunState(checkpoint["gen"], checkpoint["next_id"], _population(records), payoff)
+
+
+def _trim_metrics(root: Path, gen: int) -> None:
+    """Drop metrics of generations >= gen: a run stopped between logging a generation and
+    checkpointing it runs that generation again on resume (its other files are rewritten)."""
+    path = root / "metrics.jsonl"
+    lines = path.read_text().splitlines(keepends=True)
+    kept = [line for line in lines if json.loads(line)["gen"] < gen]
+    if len(kept) != len(lines):
+        tmp = path.with_suffix(".jsonl.tmp")
+        tmp.write_text("".join(kept))
+        os.replace(tmp, path)
 
 
 def _resume_generation_state(cfg: RunConfig, saved: dict, engine: PayoffEngine) -> RunState:
