@@ -26,7 +26,8 @@ payoffs/
                              ids (int64, aligned with rows/cols)
                              written every RunConfig.payoff_every generations + final gen
 checkpoint.pkl               volatile resume state, atomically replaced each generation:
-                             gen, next_id, pop_ids, payoff, py/np RNG states
+                             format_version 2: gen, next_id, pop_ids, payoff (no generator
+                             state: draws depend only on the seed and the generation)
 ```
 
 Reconstruction invariant: the population surviving generation G is
@@ -57,7 +58,7 @@ returns. Set `log_all_births=True` to also keep immediately-culled newborns
 `survivors_N` and starts the next generation at `N+1`. A compatible `payoff_N.npz`
 is reused after validating its IDs and shape; if absent or recorded reward/config
 history makes reuse uncertain, the current reward/interpreter recomputes the matrix.
-Python and NumPy RNGs are neither reseeded nor restored on this path. New individual
+Later generations draw from the persisted seed, as every generation does. New individual
 IDs stay above all recorded births and the previous checkpoint's `next_id`.
 
 The run is fully copied to a hidden sibling `.<run>.before_gen_<N>_<suffix>` before
@@ -68,7 +69,7 @@ ordinary I/O failures during rewriting restore it automatically, and it can also
 used for recovery after a process interruption. Original config/meta files and
 history through N are retained. Previously generated analysis plots are not updated.
 
-`resume_gen=None` still resumes the latest checkpoint and restores its RNG state.
+`resume_gen=None` still resumes the latest checkpoint.
 
 ## Config keys
 

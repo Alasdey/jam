@@ -1,108 +1,57 @@
 # treemo_gpu
 
-Batched CUDA execution of Treemo, used by `payoff.backend = "cuda"`. Results
-are identical to `treemo_c`: same rules, same leftmost matches, same scan
-order, checked bit for bit by `tests/test_treemo_gpu.py` and, through every
-reward and every batch operation, by `tests/test_payoff_gpu.py`.
+Treemo on CUDA, the only way jam runs programs. Results are identical to
+`interpreters/treemo_c` (same rules, same leftmost matches, same scan order),
+checked bit for bit in every mode by `tests/test_gpu_engine.py`.
 
-## Setup
-
-Needs CuPy built for your CUDA driver (`cupy-cuda13x` or `cupy-cuda12x`;
-`nvidia-smi` shows the driver's CUDA version) and the C library, which runs
-single executions and anything the device does not take:
-
-```bash
-gcc -O3 -shared -fPIC -o interpreters/treemo_c/libtreemo.so interpreters/treemo_c/treemo.c
-```
-
-CuPy is imported on first device use only; CPU runs never load it. The
-kernels compile on first use (about a second) and are cached by CuPy.
-
-## Use
-
-```python
-cfg.experiment.payoff.backend = "cuda"     # treemo interpreter only
-cfg.experiment.payoff.gpu_memory_mb = 1024  # per execution launch; bigger batches split
-```
-
-Rewards need nothing GPU-specific: they are written against the batch API of
-`core/matchups.py` (see "Writing a reward" in the main README), and
-`PayoffEngine.matrix()` hands each payoff block to them as one
-`DeviceMatchups` (`matchups.py` here) instead of the CPU's `HostMatchups`;
-`n_workers` and `chunksize` are unused.
-
-| Operation | On the device |
+| File | Role |
 |---|---|
-| `run` | the execution kernel, each distinct (program, input) pair once per batch |
-| `equals`, `count`, `lcs`, `similarity`, `concat` | one batched kernel each |
-| `length`, `memory` | free: lengths are known, treemo's second result is the program |
-| `const`, `map` | host; `map` downloads the tapes it needs, so it is the slow path |
+| `kernels.cu` | execution (`treemo_run`, one warp per job), output gathering, equality, counts, concatenation, LCS |
+| `rules.py`, `rules.cu` | rule extraction for many programs at once, on the device |
+| `treemo.py` | `TreemoRuntime`: settings plus the execution of batches of jobs within a memory budget |
 
-Tapes stay on the device between operations, so `run(run(m.a, m.b), m.a)` or
-`m.run(m.a, m.b).lcs(m.b)` never copy outputs back. What the device does not
-take is computed on the host, with identical results: runs whose input is not
-a 0/1 sequence (`placeholder`'s staple) or whose program is not a balanced 0/1
-word go to the C interpreter, and comparisons involving such tapes, or LCS of
-two tapes both longer than 16,384 bits, use `core.matchups`. `stats` on a
-`DeviceMatchups` counts device runs, C runs, launches and host measurements.
-
-Direct use, for pairs rather than blocks:
-
-```python
-from interpreters.treemo_gpu.treemo import TreemoInterpreter
-
-gpu = TreemoInterpreter(max_step=50, pass_mode=False, first_mode=False)
-gpu.run_batch(codes, inputs)          # [(output, code), ...] like run()
-gpu.lengths(codes, inputs)            # output lengths
-gpu.self_similarities(codes, inputs)  # LCS(output, code) / len(code)
-gpu.matchups(programs, a_ids, b_ids)  # a DeviceMatchups, as core.matchups.block() returns
-```
+Rewards and creation reach it through `core.matchups.Matchups`; nothing else
+calls it directly.
 
 ## How it works
 
 - **One heap per batch.** Every tape (programs, constants, outputs) lives
-  bit-packed, 32 symbols per word, in one device array; kernels address tapes
-  by offset and length, so programs, inputs and outputs are interchangeable.
+  bit-packed, 32 symbols per word, in one device array
+  ([core/cuda/tapes.cuh](../../core/cuda/tapes.cuh)); kernels address tapes by
+  offset and length, so programs, inputs and outputs are interchangeable.
 - **One warp per execution.** A pattern search tests 1,024 start positions per
   step (32 per lane, all candidates of a lane dropped together bit by bit); a
   ballot picks the leftmost match. A rewrite shifts the tail with funnel shifts
   across the warp, in place.
 - **Same scan watermarks as C** (`dirty[]`): a rule resumes scanning where it
-  last failed or fired. On evolved genomes this cuts scanning 40–60×, and
-  most scans fire within a few dozen positions.
+  last failed or fired. On evolved genomes this cuts scanning 40–60×.
 - **Exact state bounds.** Each execution gets `len(input) + max_step × (largest
   growth of one rule)` bits, which no execution can exceed, so nothing is
   truncated and nothing is retried.
+- **Rules** are extracted with vectorized CuPy over all the programs' bits
+  (segmented depths, open/close matching by a sort on (program, level),
+  children counted one level down), in chunks of 2²⁴ bits. Unbalanced
+  programs are refused: the C interpreter's behaviour on them is undefined.
 - **LCS on the device**: bit-parallel over the shorter tape (Crochemore et al.
-  2001), its words spread over the warp, with inter-lane carries resolved by
-  one carry-lookahead over two ballots per symbol; it stops as soon as the
-  whole shorter tape is matched.
-- **Rules** are extracted for all new programs at once with numpy (a rule is
-  a two-child node with no two-child ancestor, in pre-order) and cached per
-  genome. Patterns and replacements are read straight out of the packed
-  program; nothing is copied. Outputs used as programs are downloaded for
-  extraction.
+  2001), one job per thread up to 4,096 bits, one per warp up to 16,384 bits.
+  Longer pairs (both tapes) run in Python on the host, with a loud banner.
 
 ## Performance
 
-RTX 5060 Laptop GPU vs Ryzen AI 9 HX 370 (2026-10-05), `max_step=50`, exhaust
-mode, genomes from `outputs/main` runs (median 374–1,018 bits, up to 9,900).
-CPU-side numbers moved up to 4× with the laptop's power state during the
-session; kernel times do not depend on it.
+RTX 5060 Laptop GPU, `max_step=50`, real populations from `outputs/main`
+(2026-11-03). One generation = 100 random + 900 offspring, 200 survivors.
 
-| 1,000 genomes, all 10⁶ ordered executions | C, one core | CUDA end to end | CUDA kernels |
-|---|---|---|---|
-| output lengths | 18–70 µs per execution: 18–70 s | 0.10–0.17 s | 0.05–0.06 s |
-| plus LCS self-similarity (`quine_pressure`) | add 0.1–0.5 s per similarity (pure-Python LCS) | 0.31–0.41 s | 0.18–0.30 s |
-
-Whole generations of the `main` preset (100 random + 900 offspring, KNN-score
-to 200), payoff time per generation, results identical on both backends:
-
-| Reward | CPU, 15 workers | CUDA |
+| Survivors' median genome | Creation, CPU → GPU | Payoff (blind), GPU |
 |---|---|---|
-| `blind` | 8.7–11.6 s early on; ~48 s once genomes grow (logged runs) | 0.01–0.04 s |
-| `quine_pressure` | 158–290 s for a 100-individual toy config; full size is out of reach | 0.28–0.83 s |
+| 807 bits | 1–5 s → 0.05–0.13 s | 0.2 s |
+| 5,143 bits | 23–32 s → 0.25–0.76 s | 1.5–1.7 s |
+| 8,550 bits | 49–57 s → 0.74–1.52 s | 1.5–1.6 s |
 
-The LCS stops early once the whole program is matched: about 1% of jobs grow
-outputs of 100k–485k bits, and in the worst generation measured the early exit
-cut LCS time from 3.3 s to 0.13 s (execution itself took 0.07 s).
+Whole generations of the loop, seeded from stored populations: 30 generations
+in 40 s from the lexicase population (8,550-bit genomes; the CPU run took
+180 s per generation) and in 17 s from the best_worst_random one. Payoff time
+is mostly the Treemo kernel itself; `quine_pressure` adds the LCS kernel
+(about 3–4 s per generation on 8,550-bit genomes).
+
+The first generations of a fresh environment take a few extra seconds while
+CuPy compiles kernels; it caches them on disk.
