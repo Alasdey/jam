@@ -37,9 +37,9 @@ uv run pytest                          # test suite
 | `config.py` | All dataclass configs and run presets (`PRESETS`) |
 | `core/config_keys.py` | Config hashing (`compat_key`, `method_key`) and `exp_cfg_from_dict` |
 | `main.py` | Thin dispatcher: `python main.py [preset]` → `core.loop.run` |
-| `core/` | `types.py` (Program, Individual, Interpreter protocol) and `loop.py` (the unified generation loop, resume, checkpointing) |
+| `core/` | `types.py` (Program, Individual, Interpreter protocol), `loop.py` (the unified generation loop, resume, checkpointing) and `matchups.py` (the batch API rewards are written against) |
 | `creation/` | Program creators — random init, mutation, crossover, homoiconic recombination; `CREATORS` registry |
-| `interpreters/` | Interpreter implementations (Subleq, IconFracTran, Treemo); `INTERPRETERS` registry |
+| `interpreters/` | Interpreter implementations (Subleq, IconFracTran, Treemo, batched CUDA Treemo); `INTERPRETERS` registry |
 | `rewards/` | Reward functions (`REWARDS` registry, `RewardSpec.zero_sum`) and `PayoffEngine` |
 | `selection/` | Selection steps (`SELECTION_STEPS`: dedupe, skim, lexicase, cap_top, cap_random, nash) composed into a pipeline |
 | `store/` | Population store (`store.publish`) and cross-population tournaments (`store.tournament`) |
@@ -61,6 +61,10 @@ Selected via `ExperimentConfig.interpreter`: `subleq | iconfractran | treemo | t
 | `treemo` | `interpreters/treemo_c/` | Default. C implementation via ctypes (`libtreemo.so`); see [interpreters/treemo_c/README.md](interpreters/treemo_c/README.md) for build/CLI and compile-vs-exec tradeoffs. |
 | `treemo_py` | `interpreters/treemo_py/` | Pure-Python reference implementation; see [interpreters/treemo_py/README.md](interpreters/treemo_py/README.md) for the full language spec (rule extraction, execution, termination). |
 
+`interpreters/treemo_gpu/` is not a separate interpreter: it runs `treemo`'s
+semantics in batches on an NVIDIA GPU for `PayoffConfig.backend = "cuda"`
+(see below).
+
 Programs/inputs are `list[int]` (Treemo trees are flattened to Dyck words of
 0/1 bits). `TreemoConfig` exposes `pass_mode` and `first_mode` to control how
 rules are advanced — see `config.py` for details.
@@ -71,20 +75,64 @@ Selected via `ExperimentConfig.reward`: `blind | placeholder | quine_pressure`.
 
 | Reward | File | Behaviour |
 |---|---|---|
-| `blind` | `rewards/blind_reward.py` | Always returns 0 (no signal — used to test the loop without an evolutionary objective). |
+| `blind` | `rewards/blind_reward.py` | Each program runs on the other's code; 0 when both outputs are equal, else 1. |
 | `placeholder` | `rewards/placeholder_reward.py` | Runs both programs against a fixed input; whoever produces more output wins ±1, else 0. |
 | `quine_pressure` | `rewards/quine_pressure_reward.py` | Each program runs on the other's code as input. Reward favors the program whose output more closely resembles *itself* (normalized LCS self-similarity), pushing toward quine-like behaviour. Fully symmetric/zero-sum. |
+
+### Writing a reward
+
+A reward scores a whole batch of matchups at once and returns one value per
+matchup; the same function runs on every payoff backend, so a new reward needs
+no backend-specific code. Matchup `k` is program `m.a[k]` (whose reward it is)
+against `m.b[k]`:
+
+```python
+import numpy as np
+
+def quine_pressure(m):
+    imprint_a = m.run(m.a, m.b).similarity(m.a)  # A runs on B: how much of A is in the output
+    imprint_b = m.run(m.b, m.a).similarity(m.b)
+    return np.sign(imprint_a - imprint_b)
+```
+
+Register it in `rewards/base.py` as `RewardSpec(name, fn, zero_sum)`. The
+operations (`core/matchups.py`):
+
+| Operation | Gives |
+|---|---|
+| `m.a`, `m.b` | the two players' programs (one sequence per matchup) |
+| `m.const(seq)` | the same sequence in every matchup |
+| `m.run(code, inp)` | the output of `code[k]` run on `inp[k]`; outputs can be run or fed again |
+| `m.memory(code, inp)` | the interpreter's second result (treemo: the code) |
+| `t.concat(u)` | `t[k]` followed by `u[k]` |
+| `t.length()`, `t.count(symbol)` | per-matchup numbers |
+| `t.equals(u)`, `t.lcs(u)`, `t.similarity(ref)` | comparisons; `similarity` = LCS / `len(ref)`, 0 if either is empty |
+| `m.map(fn, *args)` | any Python per matchup: `fn` gets lists (and array entries); general but slow on big blocks |
+
+Combine the arrays with numpy (`np.sign`, `np.where`, arithmetic); the engine
+casts the result to int. Each distinct execution and measurement is computed
+once per batch, so in square self-play blocks `run(m.b, m.a)` reuses the
+outputs of `run(m.a, m.b)`. `core.matchups.play_one(fn, interpreter, a, b)`
+scores a single matchup, for tests and debugging.
+
+### Payoff engine
 
 `rewards/payoff.py` provides `PayoffEngine` — the single choke point through
 which both the evolution loop and the tournament tool evaluate matchups.
 `matrix(ref, pop)` computes a payoff block (in parallel when
 `PayoffConfig.n_workers > 1`, with the worker pool reused across generations).
-`PayoffConfig.chunksize` controls how many matchup tasks are submitted to a
-worker at once; use `1` for the finest load balancing when matchup costs vary.
-For chunks larger than one, the matchup list is shuffled reproducibly before
-batching, using a separate RNG so scheduling does not affect evolution randomness.
+The block is cut into tiles of about `PayoffConfig.chunksize` matchups (rows ×
+columns, so a task ships only its own programs); use `1` for the finest load
+balancing when matchup costs vary. Tiles are shuffled reproducibly before
+dispatch, using a separate RNG so scheduling does not affect evolution randomness.
 `extend(payoff, old, new)` grows the square self-play matrix, deriving the
 reverse block as `-A.T` when `RewardSpec.zero_sum` allows it.
+
+With `PayoffConfig.backend = "cuda"` (treemo only), each block is scored as one
+batch on the GPU: executions, comparisons and LCS run on the device, with
+results identical to the CPU backend. The tournament and
+`analysis.score_gen_pooled` CLIs take `--backend cuda` too. Setup, design and
+benchmarks: [interpreters/treemo_gpu/README.md](interpreters/treemo_gpu/README.md).
 
 ## Selection
 

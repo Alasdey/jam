@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 
 from analysis.tournament_ratings import compute_ratings, load_block, write_ratings
-from config import ExperimentConfig, RunConfig, SkimStepConfig, TreemoConfig
+from config import ExperimentConfig, PayoffConfig, RunConfig, SkimStepConfig, TreemoConfig
+from core.matchups import play_one
 from core.loop import run
 from interpreters import build_interpreter
 from rewards.base import REWARDS
@@ -35,6 +36,7 @@ def _publish_run(tmp_path, label, seed, store_dir, max_step=10) -> str:
         selection=[SkimStepConfig(n_rounds=1, n_accepted=None)],
         out_dir=str(tmp_path / f"run_{label}"),
         experiment=_exp(max_step),
+        publish_label=None,  # published explicitly below, into the test store
     )
     run(cfg)
     return publish(str(store_dir), label, cfg.out_dir)
@@ -83,7 +85,7 @@ def test_block_matches_direct_evaluation_and_reverse_is_negated(arena):
     interp = build_interpreter(_exp())
     fn = REWARDS["placeholder"].fn
     expected = np.array([
-        [fn(interp, ra["genome"], rb["genome"]) for rb in b_individuals]
+        [play_one(fn, interp, ra["genome"], rb["genome"]) for rb in b_individuals]
         for ra in a_individuals
     ])
     assert np.array_equal(load_block(str(tdir), pop_a, pop_b, True), expected)
@@ -248,7 +250,7 @@ def test_cli_round_trip(tmp_path):
     run_b = RunConfig(
         seed=2, n_random=4, n_offspring=4, n_iter=3,
         selection=[SkimStepConfig(n_rounds=1, n_accepted=None)],
-        out_dir=str(tmp_path / "run_cli"), experiment=_exp(),
+        out_dir=str(tmp_path / "run_cli"), experiment=_exp(), publish_label=None,
     )
     run(run_b)
 
@@ -273,3 +275,36 @@ def test_cli_round_trip(tmp_path):
         assert key in table.splitlines()[0]
         assert key in ratings["populations"][pop_a]
         assert key in ratings["populations"][pop_a]["per_opponent"][pop_b]
+
+
+@pytest.mark.cuda
+def test_cuda_backend_stores_the_same_blocks(tmp_path):
+    store = tmp_path / "store"
+    pops = []
+    for label, seed in (("alpha", 1), ("beta", 2)):
+        cfg = RunConfig(
+            seed=seed, n_random=6, n_offspring=6, n_iter=3,
+            selection=[SkimStepConfig(n_rounds=1, n_accepted=None)],
+            out_dir=str(tmp_path / f"run_{label}"), publish_label=None,
+            experiment=ExperimentConfig(
+                interpreter="treemo", reward="quine_pressure",
+                treemo=TreemoConfig(max_step=20, tree_size=15),
+                payoff=PayoffConfig(n_workers=1),
+            ),
+        )
+        run(cfg)
+        pops.append(publish(str(store), label, cfg.out_dir))
+    blocks = {}
+    for backend in ("cpu", "cuda"):
+        tdir = tmp_path / f"tournament_{backend}"
+        create_tournament(str(tdir), "quine_pressure", pops[0], str(store),
+                          include_self=True, backend=backend)
+        add_populations(str(tdir), [pops[1]], include_self=True, backend=backend)
+        blocks[backend] = {}
+        for path in (tdir / "blocks").glob("*.npz"):
+            with np.load(path) as z:
+                blocks[backend][path.name] = z["payoff"]
+    assert len(blocks["cpu"]) == 3
+    assert blocks["cpu"].keys() == blocks["cuda"].keys()
+    for name, payoff in blocks["cpu"].items():
+        assert np.array_equal(payoff, blocks["cuda"][name])

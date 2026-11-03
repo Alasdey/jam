@@ -30,6 +30,7 @@ def _exp() -> ExperimentConfig:
 
 
 def _cfg(out_dir, seed=123, **kw) -> RunConfig:
+    kw.setdefault("publish_label", None)  # never publish into the real store
     return RunConfig(
         seed=seed,
         n_random=5,

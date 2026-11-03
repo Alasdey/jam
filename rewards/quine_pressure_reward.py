@@ -1,47 +1,11 @@
 # rewards/quine_pressure.py
 
-from typing import List, Union
+import numpy as np
 
-Program = List[int]
-
-
-def _lcs_length(a: List[int], b: List[int]) -> int:
-    """
-    Standard DP longest common subsequence length.
-    O(|a| * |b|) time and O(min(|a|,|b|)) space.
-    """
-    if not a or not b:
-        return 0
-
-    # Keep the shorter sequence in the inner loop
-    if len(a) < len(b):
-        a, b = b, a
-
-    n = len(b)
-    prev = [0] * (n + 1)
-    curr = [0] * (n + 1)
-
-    for x in a:
-        for j, y in enumerate(b):
-            curr[j + 1] = prev[j] + 1 if x == y else max(curr[j], prev[j + 1])
-        prev, curr = curr, [0] * (n + 1)
-
-    return prev[n]
+from core.matchups import Matchups
 
 
-def _similarity(output: Program, reference: Program) -> float:
-    """
-    Normalised LCS similarity: how much of `reference` appears in `output`.
-    Returns 0.0 if either is empty.
-    """
-    if not output or not reference:
-        return 0.0
-
-    lcs = _lcs_length(output, reference)
-    return lcs / len(reference)
-
-
-def reward(interpreter, code_a: Program, code_b: Program) -> int:
+def reward(m: Matchups) -> np.ndarray:
     """
     Quine Pressure reward.
 
@@ -49,29 +13,11 @@ def reward(interpreter, code_a: Program, code_b: Program) -> int:
     Draw    ( 0) if imprint strengths are equal.
     A loses (-1) otherwise.
 
-    Both sides of the interaction are evaluated, making this fully symmetric
-    and zero-sum: reward(A, B) = -reward(B, A).
-
-    Args:
-        interpreter : any interpreter with .run(code, input) -> (output, mem)
-        code_a      : program A (List[int] or str)
-        code_b      : program B (List[int] or str)
-
-    Returns:
-        +1, 0, or -1
+    A's imprint is the normalised LCS similarity of A's output, when run on B,
+    to A itself: how much of A appears in it. Both sides of the interaction are
+    evaluated, making this fully symmetric and zero-sum:
+    reward(A, B) = -reward(B, A).
     """
-    # A runs on B → does the output look like A?
-    out_ab, _ = interpreter.run(code_a, code_b)
-    # B runs on A → does the output look like B?
-    out_ba, _ = interpreter.run(code_b, code_a)
-
-    imprint_a = _similarity(out_ab, code_a)  # A's self-similarity in output
-    imprint_b = _similarity(out_ba, code_b)  # B's self-similarity in output
-
-    score = imprint_a - imprint_b
-
-    if score > 0:
-        return 1
-    elif score < 0:
-        return -1
-    return 0
+    imprint_a = m.run(m.a, m.b).similarity(m.a)  # A runs on B → does the output look like A?
+    imprint_b = m.run(m.b, m.a).similarity(m.b)  # B runs on A → does the output look like B?
+    return np.sign(imprint_a - imprint_b)

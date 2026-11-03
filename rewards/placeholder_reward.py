@@ -1,18 +1,15 @@
 
-from typing import List
+import numpy as np
+
+from core.matchups import Matchups
+
+STAPLE = [0, 1, 2, 3, 4, 5]
 
 
-def reward(interpreter, code_a: List[int], code_b: List[int]) -> int:
+def reward(m: Matchups) -> np.ndarray:
     """
     Reward obtained by playing both side of the subleq game with deterministic reward -1, 0 or 1
     The more the better for A 
     """
-    staple = [0, 1, 2, 3, 4, 5]
-    out_a, _ = interpreter.run(code_a, staple)
-    out_b, _ = interpreter.run(code_b, staple)
-    
-    if len(out_a) == len(out_b):
-        return 0
-    elif len(out_a) > len(out_b):
-        return 1
-    return -1
+    staple = m.const(STAPLE)
+    return np.sign(m.run(m.a, staple).length() - m.run(m.b, staple).length())

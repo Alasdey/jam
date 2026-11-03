@@ -53,3 +53,19 @@ INTERPRETERS: dict[str, Callable[[ExperimentConfig], Interpreter]] = {
 
 def build_interpreter(cfg: ExperimentConfig) -> Interpreter:
     return INTERPRETERS[cfg.interpreter](cfg)
+
+
+def build_cuda_interpreter(cfg: ExperimentConfig):
+    """Batched GPU Treemo for payoff.backend="cuda"; same semantics as "treemo"."""
+    if cfg.interpreter != "treemo":
+        raise ValueError(
+            f"payoff.backend='cuda' runs the treemo interpreter, not {cfg.interpreter!r}"
+        )
+    from interpreters.treemo_gpu.treemo import TreemoInterpreter
+
+    return TreemoInterpreter(
+        max_step=cfg.treemo.max_step,
+        pass_mode=cfg.treemo.pass_mode,
+        first_mode=cfg.treemo.first_mode,
+        memory_mb=cfg.payoff.gpu_memory_mb,
+    )
