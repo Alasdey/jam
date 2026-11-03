@@ -11,10 +11,11 @@ seeds.
     python -m sides.selection_tournament --methods mixture lexicase --n-iter 500
     python -m sides.selection_tournament --with-old              # also the four original populations
 
-Interrupting is safe: a run continues from its checkpoint, a finished run is
-not redone, a published one is not republished, and only populations not yet
-in the tournament are added (only missing blocks are computed). Run dirs are
-<runs-dir>/<method>_s<seed>; a run's pop_id is kept in its published.txt.
+Nothing is resumed: a run dir left by an interrupted run stops the script
+with an error (delete it to run that seed again). Finished runs are reused: a
+run's pop_id is kept in <runs-dir>/<method>_s<seed>/published.txt, it is not
+run or published again, and only populations not yet in the tournament are
+added (only missing blocks are computed).
 
 By default the tournament is a new one, outputs/store/tournaments/selections_v2:
 the original `selections` tournament was computed with an earlier definition
@@ -36,7 +37,6 @@ from config import (
     RunConfig,
 )
 from core.loop import run
-from loggers.run_io import load_checkpoint
 from store.population_store import publish
 from store.tournament import add_populations, create_tournament, load_tournament
 
@@ -59,26 +59,19 @@ OLD_POPULATIONS = {
 
 
 def run_and_publish(method: str, seed: int, n_iter: int, runs_dir: Path, store_dir: str) -> str:
-    """The pop_id of this (method, seed) run's final population: run, resume or reuse as needed."""
+    """The pop_id of this (method, seed) run's final population: a fresh run, or the published one."""
     run_dir = runs_dir / f"{method}_s{seed}"
     published = run_dir / "published.txt"
     if published.exists():
         return published.read_text().strip()
+    if run_dir.exists():
+        raise RuntimeError(f"{run_dir} was left by an unfinished run; delete it to run {method} seed {seed} again")
 
-    if (run_dir / "checkpoint.pkl").exists():
-        done = load_checkpoint(str(run_dir))["gen"]
-        if done < n_iter:
-            print(f"\n=== {method}, seed {seed}: resuming at generation {done} of {n_iter}")
-            run(RunConfig(resume_from=str(run_dir), n_iter=n_iter - done, selection=METHODS[method](),
-                          publish_label=None, store_dir=store_dir))
-    elif run_dir.exists():
-        raise RuntimeError(f"{run_dir} exists without a checkpoint (stopped during generation 0): delete it")
-    else:
-        print(f"\n=== {method}, seed {seed}: {n_iter} generations into {run_dir}")
-        t0 = time.time()
-        run(RunConfig(seed=seed, n_iter=n_iter, selection=METHODS[method](), out_dir=str(run_dir),
-                      publish_label=None, store_dir=store_dir))
-        print(f"=== {method}, seed {seed}: {time.time() - t0:.0f} s")
+    print(f"\n=== {method}, seed {seed}: {n_iter} generations into {run_dir}")
+    t0 = time.time()
+    run(RunConfig(seed=seed, n_iter=n_iter, selection=METHODS[method](), out_dir=str(run_dir),
+                  publish_label=None, store_dir=store_dir))
+    print(f"=== {method}, seed {seed}: {time.time() - t0:.0f} s")
 
     pop_id = publish(store_dir, f"sel-{method}-s{seed}", str(run_dir))
     published.write_text(pop_id + "\n")
