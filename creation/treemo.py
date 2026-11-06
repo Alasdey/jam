@@ -11,7 +11,7 @@ creation/genetics.py used to on the CPU:
         otherwise the configured tree crossover of A and B;
     otherwise: the configured tree mutation of one survivor.
 
-The operators run in creation/creation.cu, one thread per child; the
+The operators run in creation/creation.cu, one warp per child; the
 homoiconic runs go through core.matchups like any other execution.
 """
 
@@ -24,6 +24,9 @@ from core.population import METHOD_CODE, Population
 
 _SOURCE = "creation/creation.cu"
 _POPULATION = "core/cuda/population.cu"
+# How the create kernel is launched: one warp per child. The tests swap in the
+# one-thread-per-child reference (tests/reference/creation_thread.cu) with `launch`.
+_CREATE_LAUNCH = warp_launch
 
 OP_RANDOM = 0
 # Room for a subtree-mutation child: factor x parent length + extra symbols.
@@ -114,7 +117,7 @@ class TreemoCreator:
             at = exclusive_cumsum(cp.asarray(cap[todo] + extra[todo]))
             scratch = cp.empty(max(1, int((cap[todo] + extra[todo]).sum())), dtype=cp.uint8)
             out_len = cp.empty(len(todo), dtype=cp.int32)
-            launch(kernel(_SOURCE, "create"), len(todo),
+            _CREATE_LAUNCH(kernel(_SOURCE, "create"), len(todo),
                    heap, surv_off, surv_length, np.int32(len(todo)),
                    cp.asarray(op[todo]), cp.asarray(a[jobs[todo]]), cp.asarray(b[jobs[todo]]),
                    cp.asarray(jobs[todo].astype(np.uint32)),

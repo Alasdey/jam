@@ -6,6 +6,7 @@ import pytest
 
 import creation.treemo as creation_module
 from config import ExperimentConfig
+from core.device import launch
 from core.population import METHODS, Population
 from core.rng import DeviceRng
 from creation.treemo import TreemoCreator
@@ -169,3 +170,27 @@ def test_large_tree_statistics_match_the_cpu():
 def test_bootstrap_without_survivors_makes_random_trees():
     pop, kids = _gpu_children(_cfg(tree_size=20), [], 30, n_random=10)
     assert len(kids) == 40 and all(m == "random" and len(g) == 38 for m, g in kids)
+
+
+def _thread_kernel_children(monkeypatch, *args, **kwargs):
+    """_gpu_children made by the one-thread-per-child kernel the warp kernel replaced."""
+    with monkeypatch.context() as mp:
+        mp.setattr(creation_module, "_SOURCE", "tests/reference/creation_thread.cu")
+        mp.setattr(creation_module, "_CREATE_LAUNCH", launch)
+        return _gpu_children(*args, **kwargs)
+
+
+@pytest.mark.parametrize("mutation,cross,rate,room", [
+    ("subtree", "random_depth", 0.05, None), ("subtree", "depth1", 0.4, None), ("subtree", "random_depth", 1.0, (1, 2)),
+    ("leaf", "random_depth", 0.7, None), ("leaf", "depth1", 1.0, (1, 0)),
+])
+def test_warp_kernel_makes_the_thread_kernels_children(monkeypatch, mutation, cross, rate, room):
+    # Same parents, ops and Philox counters: the very same children, retries included.
+    random.seed(7)
+    parents = [ref.gen_tree(random.randint(1, 900)) for _ in range(40)] + SMALL + [[], [1, 0]]
+    cfg = _cfg(rate=rate, crossover=0.5, homoiconic=0.0, mutation=mutation, cross=cross, tree_size=60)
+    if room is not None:
+        monkeypatch.setattr(creation_module, "_MUTATION_ROOM", room)
+    _, warp = _gpu_children(cfg, parents, 2_000, n_random=200, seed=11)
+    _, thread = _thread_kernel_children(monkeypatch, cfg, parents, 2_000, n_random=200, seed=11)
+    assert warp == thread
