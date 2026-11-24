@@ -1,16 +1,16 @@
 """
-Random numbers for one generation, on the device.
+Random numbers for one batch of the online loop, on the device.
 
 Every draw in jam comes from Philox4x32-10 (core/cuda/philox.cuh) with the
-run seed as key and the counter (element, draw, generation, call). Draws are
-pure functions of where they are made, not of a stored state, so a run
-resumed at generation g draws exactly what the uninterrupted run drew, and
+run seed as key and the counter (element, draw, gen, call), where gen is the
+batch index. Draws are pure functions of where they are made, not of a stored
+state, so a resumed run draws exactly what the uninterrupted run drew, and
 there is no generator state to checkpoint.
 
-Each consumer of randomness in a generation (an array draw here, or a kernel
+Each consumer of randomness for a batch (an array draw here, or a kernel
 that draws inside, via kernel_args) takes the next call number. Calls happen
-in program order, so a generation's draws are reproducible as long as the
-code and config are the same.
+in program order, so a batch's draws are reproducible as long as the code and
+config are the same.
 
 Selection steps and creation code take a DeviceRng and draw from it:
 
@@ -28,21 +28,26 @@ _MASK = 0xFFFFFFFF
 
 
 class DeviceRng:
-    def __init__(self, seed: int, gen: int):
+    def __init__(self, seed: int, gen: int, first_call: int = 0):
+        """
+        `gen` is the counter's third word: the batch index in the online loop.
+        `first_call` lets two consumers draw for the same gen without sharing
+        counters (the online loop's workers start at 0, its coordinator at 2**31).
+        """
         if seed < 0 or seed >> 64:
             raise ValueError("seed must fit in 64 unsigned bits")
         if gen < 0 or gen >> 32:
             raise ValueError("gen must fit in 32 unsigned bits")
         self.seed = seed
         self.gen = gen
-        self.calls = 0
+        self.calls = first_call
 
     def kernel_args(self) -> tuple:
         """(key0, key1, gen, call) for a kernel that draws with rng_init: one call."""
         call = self.calls
         self.calls += 1
         if call >> 32:
-            raise RuntimeError("more than 2**32 random calls in one generation")
+            raise RuntimeError("more than 2**32 random calls for one batch")
         return (np.uint32(self.seed & _MASK), np.uint32(self.seed >> 32),
                 np.uint32(self.gen), np.uint32(call))
 

@@ -94,6 +94,18 @@ class Population:
                                 [r["method"] for r in records], [r["parents"] for r in records],
                                 [r["born_gen"] for r in records])
 
+    def to_host(self) -> dict:
+        """Host copies of every field (Population.from_host undoes it): to send to another process."""
+        cp = cupy()
+        return {"heap": cp.asnumpy(self.heap), "offset": cp.asnumpy(self.offset), "length": cp.asnumpy(self.length),
+                "ids": self.ids, "method": self.method, "parents": self.parents, "born_gen": self.born_gen}
+
+    @classmethod
+    def from_host(cls, fields: dict) -> "Population":
+        cp = cupy()
+        return cls(cp.asarray(fields["heap"]), cp.asarray(fields["offset"]), cp.asarray(fields["length"]),
+                   fields["ids"], fields["method"], fields["parents"], fields["born_gen"])
+
     def take(self, idx) -> "Population":
         """The individuals at idx (host or device indices), in that order, in a compact heap."""
         cp = cupy()

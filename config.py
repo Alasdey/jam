@@ -161,35 +161,64 @@ class RandomBaselineConfig:
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
 
 
+# --- Online loop (core/loop.py): worker processes, lag, memory ---
+
+@dataclass
+class StreamConfig:
+    # Worker processes that create and test batches, each on its own CUDA
+    # context (Python threads cannot: the GIL serializes their host work).
+    # 0 makes every batch in the coordinator, one at a time (tests,
+    # debugging); the run is the same either way.
+    n_workers: int = 3
+    # Batches in flight: batch t is bred from the population after batch
+    # t - in_flight was inserted (or at the start of its epoch). At least
+    # n_workers, so workers keep testing while one batch is inserted.
+    in_flight: int = 6
+    # CuPy pool cap of each worker and of the coordinator. Together, with
+    # ~0.5 GB of CUDA context per process, they must stay below the GPU's
+    # dedicated memory minus what other programs use, or the driver spills
+    # into shared system memory. A batch that hits its cap is made again in
+    # smaller launches (same results).
+    worker_memory_mb: int = 1_500
+    coordinator_memory_mb: int = 1_500
+
+
 # --- Unified run config (driven by core.loop.run) ---
 
 @dataclass
 class RunConfig:
     # RNG seed; resolved to a concrete value at startup and persisted in config.json
     seed: Optional[int] = 42
-    # extra random individuals injected at generation 0 only (fresh starts)
+    # random individuals of the initial population (fresh starts), tested and
+    # selected before the stream starts
     n_init: int = 0
-    # store pop_ids whose individuals seed generation 0 (composite runs)
+    # store pop_ids whose individuals join the initial population (composite runs)
     seed_populations: list[str] = field(default_factory=list)
-    # fresh randoms / genetic offspring injected per generation
-    n_random: int = 1*10**2
-    n_offspring: int = 9*10**2
-    n_iter: int = 10**4
-    # selection steps applied BEFORE payoff extension, on genomes alone: they
-    # thin the prospective population so the dropped individuals never cost a
-    # matchup. Only payoff-free steps may go here (selection.base validates).
+    # one batch of the stream: fresh random codes and children of the population
+    n_random: int = 6
+    n_offspring: int = 58
+    # insertions per epoch: the unit of logging, checkpoints and resume (the
+    # "gen" of the run-directory files); the stream drains between epochs
+    epoch_batches: int = 100
+    # epochs to run
+    n_iter: int = 10**3
+    stream: StreamConfig = field(default_factory=StreamConfig)
+    # selection steps applied BEFORE testing, on genomes alone: new codes they
+    # drop never cost a matchup (in the worker, against the batch's snapshot,
+    # then again at insertion, against the current population). Only
+    # payoff-free steps may go here (selection.base validates).
     pre_selection: list = field(default_factory=lambda: [MaxLengthStepConfig(max_length=10000), DedupeStepConfig()])
-    # ordered selection pipeline applied after payoff extension each generation
+    # selection pipeline applied at each insertion, to the square payoff
+    # matrix of the population and the batch's new codes
     selection: list = field(default_factory=lambda: [BestWorstRandomStepConfig(n_best=150, n_worst=20, n_rand=30)])
-    # persist payoffs/payoff_XXXXXX.npz every N generations + final (0 = never)
+    # persist payoffs/payoff_XXXXXX.npz every N epochs + final (0 = never)
     payoff_every: int = 10*3
-    # False: persist only newborns that survive their birth generation
+    # False: persist only new codes that survive their insertion
     log_all_births: bool = False
-    # path to a previous run's out_dir to continue (runs n_iter MORE generations)
-    # resume_from: Optional[str] = "outputs/main/20261001_151539" # "outputs/main/20260929_164051" # None
+    # path to a previous run's out_dir to continue (runs n_iter MORE epochs)
     resume_from: Optional[str] = None
-    # Restore survivors AFTER this generation; continue at resume_gen + 1.
-    # None resumes the latest checkpoint. Explicit generations do not reset RNGs.
+    # Restore the population AFTER this epoch; continue at resume_gen + 1.
+    # None resumes the latest checkpoint.
     resume_gen: Optional[int] = None
     # if set, publish the final population to the store under this label
     publish_label: Optional[str] = 'initial_test'
@@ -207,26 +236,26 @@ def _stamped(prefix: str) -> str:
 
 
 def preset_main() -> RunConfig:
-    # the historical main.py loop: randoms + offspring, skim then cap_top
+    # randoms + offspring in every batch, best/worst/random survival
     return RunConfig(out_dir=_stamped("outputs/main/"))
 
 
 def preset_evolution() -> RunConfig:
-    # the historical sides/evolution.py loop: fixed initial pop, offspring only
+    # a fixed initial population, offspring only
     return RunConfig(
         n_init=50,
         n_random=0,
         n_offspring=20,
-        n_iter=1000,
+        n_iter=100,
         selection=[SkimStepConfig(n_rounds=2, n_accepted=None), CapStepConfig(max_pop=500)],
         out_dir=_stamped("outputs/evolution/"),
     )
 
 
 def preset_random_skimmed() -> RunConfig:
-    # the historical sides/random_skimmed.py loop: random injection only
+    # random injection only
     return RunConfig(
-        n_random=10**3,
+        n_random=64,
         n_offspring=0,
         selection=[SkimStepConfig(), CapStepConfig(kind="cap_random", max_pop=2_000)],
         out_dir=_stamped("outputs/random_skimmed/"),

@@ -39,10 +39,10 @@ class ExperimentLogger:
                                 (config_resumed_<ts>.json on resume)
       meta.json               — start time, git hash, format_version
                                 (meta_resumed_<ts>.json on resume)
-      metrics.jsonl           — one JSON record per generation (append)
-      populations/
-        births_XXXXXX.jsonl   — newborn records persisted at gen XXXXXX
-        survivors_XXXXXX.json — {"gen", "ids", "scores"} after selection
+      metrics.jsonl           — one JSON record per insertion (append)
+      populations/            — XXXXXX counts epochs (RunConfig.epoch_batches insertions)
+        births_XXXXXX.jsonl   — new codes inserted during epoch XXXXXX
+        survivors_XXXXXX.json — {"gen", "ids", "scores", "next_batch"} at the epoch's end
       payoffs/
         payoff_XXXXXX.npz     — arrays: payoff (int32, square), ids (int64)
       checkpoint.pkl          — volatile resume state, atomically replaced;
@@ -82,18 +82,16 @@ class ExperimentLogger:
             json.dump(record, f)
             f.write("\n")
 
-    def log_generation(
+    def log_population(
         self,
         gen: int,
-        metrics: dict[str, Any],
         births,
         survivor_ids: list[int],
         scores: list[int],
         payoff: Optional[np.ndarray] = None,
+        **survivor_fields: Any,
     ) -> None:
-        """births: a core.population.Population of the newborns to persist."""
-        self.log_metrics(metrics)
-
+        """births: a core.population.Population of the new codes to persist."""
         if len(births):
             with open(self._pops_dir / f"births_{gen:06d}.jsonl", "w") as f:
                 for i, bits in enumerate(births.bits()):
@@ -103,7 +101,7 @@ class ExperimentLogger:
                             f'"born_gen": {int(births.born_gen[i])}}}\n')
 
         with open(self._pops_dir / f"survivors_{gen:06d}.json", "w") as f:
-            json.dump({"gen": gen, "ids": survivor_ids, "scores": scores}, f)
+            json.dump({"gen": gen, "ids": survivor_ids, "scores": scores, **survivor_fields}, f)
 
         if payoff is not None:
             np.savez_compressed(
